@@ -1,14 +1,15 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.simulation.world.world import World
 
 
 app = FastAPI()
 
-world = World(20, 20)
+# Compresses repetitive chunk/terrain JSON well - cheap win, no client changes needed
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# CORS configuration goes HERE
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -21,6 +22,9 @@ app.add_middleware(
 )
 
 
+world = World(500, 500)
+
+
 @app.get("/")
 def root():
     return {
@@ -28,7 +32,18 @@ def root():
     }
 
 
-@app.get("/world")
-def get_world():
-    print(world.get_tile(5, 8))
-    return world.to_dict()
+@app.get("/world/meta")
+def get_world_meta():
+    # Frontend fetches this once on load - no tile data, just dimensions
+    return world.meta()
+
+
+@app.get("/world/chunk/{cx}/{cy}")
+def get_world_chunk(cx: int, cy: int):
+    max_cx = (world.width - 1) // world.chunk_size
+    max_cy = (world.height - 1) // world.chunk_size
+
+    if not (0 <= cx <= max_cx and 0 <= cy <= max_cy):
+        raise HTTPException(status_code=404, detail="Chunk out of range")
+
+    return world.get_chunk(cx, cy)

@@ -1,32 +1,39 @@
 import { useEffect, useState } from 'react'
 import WorldCanvas from './WorldCanvas'
 
-type Tile = {
-  x: number
-  y: number
-  terrain: string
-}
-
-type World = {
+type WorldMeta = {
   width: number
   height: number
-  tiles: Tile[]
+  chunkSize: number
 }
 
+const API_BASE = 'http://127.0.0.1:8000'
+
 function App() {
-  const [world, setWorld] = useState<World | null>(null)
+  const [worldMeta, setWorldMeta] = useState<WorldMeta | null>(null)
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/world')
-      .then((response) => response.json())
-      .then((data: World) => setWorld(data))
+    fetch(`${API_BASE}/world/meta`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        return response.json()
+      })
+      .then((data: WorldMeta) => {
+        setWorldMeta(data)
+      })
+      .catch((error) => {
+        console.error('World meta fetch failed:', error)
+      })
   }, [])
 
   return (
     <div>
       <h1>Simian Engine</h1>
 
-      {world && <WorldCanvas world={world} />}
+      {worldMeta && <WorldCanvas worldMeta={worldMeta} apiBase={API_BASE} />}
     </div>
   )
 }
