@@ -22,7 +22,7 @@ app.add_middleware(
 )
 
 
-world = World(500, 500)
+world = World(300, 300)
 
 
 @app.get("/")
@@ -47,3 +47,9 @@ def get_world_chunk(cx: int, cy: int):
         raise HTTPException(status_code=404, detail="Chunk out of range")
 
     return world.get_chunk(cx, cy)
+
+
+@app.get("/world/thumbnail")
+def get_world_thumbnail():
+    # Small pre-downsampled terrain map for the minimap - fetched once
+    return world.thumbnail()
