@@ -42,6 +42,18 @@ type TreeData = {
   species: string
 }
 
+type MonkeyData = {
+  id: number
+  x: number
+  y: number
+  hunger: number
+  state: string
+  target: {
+    x: number
+    y: number
+  } | null
+}
+
 type ChunkResponse = {
   cx: number
   cy: number
@@ -64,6 +76,7 @@ const VIEWPORT_WIDTH = 800
 const VIEWPORT_HEIGHT = 600
 
 const LOAD_MARGIN_CHUNKS = 1
+const MONKEY_POLL_INTERVAL = 1000
 
 const TERRAIN_COLOR: Record<
   string,
@@ -99,8 +112,6 @@ function WorldCanvas({
   const chunkPixelSize =
     chunkSize * TILE_SIZE
 
-  // Camera position is kept outside React state
-  // so dragging doesn't re-render every frame.
   const cameraRef = useRef({
     x: 0,
     y: 0,
@@ -108,19 +119,11 @@ function WorldCanvas({
 
   const containerRef = useRef<any>(null)
 
-  const [
-    dragging,
-    setDragging,
-  ] = useState(false)
-
   const lastPointerRef = useRef({
     x: 0,
     y: 0,
   })
 
-  // Each loaded chunk now stores both:
-  // - its baked terrain texture
-  // - its tree data
   const chunksRef = useRef<
     Map<string, LoadedChunk>
   >(new Map())
@@ -128,6 +131,21 @@ function WorldCanvas({
   const loadingRef = useRef<
     Set<string>
   >(new Set())
+
+  const [
+    dragging,
+    setDragging,
+  ] = useState(false)
+
+  const [
+    monkeys,
+    setMonkeys,
+  ] = useState<MonkeyData[]>([])
+
+  const [
+    selectedMonkeyId,
+    setSelectedMonkeyId,
+  ] = useState<number | null>(null)
 
   const [
     ,
@@ -176,10 +194,6 @@ function WorldCanvas({
         const data: ChunkResponse =
           await response.json()
 
-        // Create a tiny canvas where
-        // one canvas pixel = one world tile.
-        //
-        // Pixi then scales this texture up.
         const canvas =
           document.createElement(
             'canvas',
@@ -277,6 +291,59 @@ function WorldCanvas({
       forceRender,
     ],
   )
+
+  const loadMonkeys = useCallback(
+    async () => {
+      try {
+        const response = await fetch(
+          `${apiBase}/world/monkeys`,
+        )
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`,
+          )
+        }
+
+        const data = await response.json()
+
+        setMonkeys(
+          data.monkeys ?? [],
+        )
+      } catch (error) {
+        console.error(
+          'Monkey fetch failed:',
+          error,
+        )
+      }
+    },
+    [apiBase],
+  )
+
+  useEffect(() => {
+    loadMonkeys()
+
+    const interval =
+      window.setInterval(
+        loadMonkeys,
+        MONKEY_POLL_INTERVAL,
+      )
+
+    return () => {
+      window.clearInterval(
+        interval,
+      )
+    }
+  }, [loadMonkeys])
+
+  const selectedMonkey =
+    selectedMonkeyId === null
+      ? null
+      : monkeys.find(
+          (monkey) =>
+            monkey.id ===
+            selectedMonkeyId,
+        ) ?? null
 
   const maxCx =
     Math.ceil(
@@ -379,14 +446,10 @@ function WorldCanvas({
       onViewportChange,
     ])
 
-  // Load chunks visible when the
-  // world first appears.
   useEffect(() => {
     updateVisibleChunks()
   }, [updateVisibleChunks])
 
-  // Throttle visibility calculations
-  // while the camera is moving.
   const throttleRef =
     useRef<number | null>(
       null,
@@ -413,8 +476,6 @@ function WorldCanvas({
         )
     }, [updateVisibleChunks])
 
-  // Clean up timeout + Pixi textures
-  // when this canvas disappears.
   useEffect(() => {
     return () => {
       if (
@@ -439,198 +500,339 @@ function WorldCanvas({
     }
   }, [])
 
+  const handleWorldClick = useCallback(
+    (
+      event:
+        FederatedPointerEvent,
+    ) => {
+      const worldPixelX =
+        event.global.x -
+        cameraRef.current.x
+
+      const worldPixelY =
+        event.global.y -
+        cameraRef.current.y
+
+      const tileX = Math.floor(
+        worldPixelX /
+          TILE_SIZE,
+      )
+
+      const tileY = Math.floor(
+        worldPixelY /
+          TILE_SIZE,
+      )
+
+      const monkey =
+        monkeys.find(
+          (candidate) =>
+            candidate.x === tileX &&
+            candidate.y === tileY,
+        )
+
+      setSelectedMonkeyId(
+        monkey?.id ?? null,
+      )
+    },
+    [monkeys],
+  )
+
   const loadedChunks =
     Array.from(
       chunksRef.current.entries(),
     )
 
   return (
-    <Application
-      width={VIEWPORT_WIDTH}
-      height={VIEWPORT_HEIGHT}
-      backgroundColor={0x1E90FF}
-    >
-      <pixiContainer
-        ref={containerRef}
+    <div>
+      <Application
+        width={VIEWPORT_WIDTH}
+        height={VIEWPORT_HEIGHT}
+        backgroundColor={0x1e90ff}
       >
-        {loadedChunks.map(
-          ([key, chunk]) => {
-            const [
-              cx,
-              cy,
-            ] = key
-              .split(':')
-              .map(Number)
+        <pixiContainer
+          ref={containerRef}
+        >
+          {loadedChunks.map(
+            ([key, chunk]) => {
+              const [
+                cx,
+                cy,
+              ] = key
+                .split(':')
+                .map(Number)
 
-            return (
-              <pixiContainer
-                key={key}
-                x={
-                  cx *
-                  chunkPixelSize
-                }
-                y={
-                  cy *
-                  chunkPixelSize
-                }
-              >
-                {/* Terrain */}
-                <pixiSprite
-                  texture={
-                    chunk.texture
+              return (
+                <pixiContainer
+                  key={key}
+                  x={
+                    cx *
+                    chunkPixelSize
                   }
-                  x={0}
-                  y={0}
-                  width={
-                    chunk.width *
-                    TILE_SIZE
+                  y={
+                    cy *
+                    chunkPixelSize
                   }
-                  height={
-                    chunk.height *
-                    TILE_SIZE
-                  }
-                />
-
-                {/* Trees */}
-                <pixiGraphics
-                  draw={(
-                    graphics,
-                  ) => {
-                    graphics.clear()
-
-                    for (
-                      const tree
-                      of chunk.trees
-                    ) {
-                      const treeX =
-                        tree.x *
-                        TILE_SIZE
-
-                      const treeY =
-                        tree.y *
-                        TILE_SIZE
-
-                      // Tiny trunk
-                      graphics
-                        .rect(
-                          treeX + 3,
-                          treeY + 4,
-                          2,
-                          4,
-                        )
-                        .fill(
-                          0x6b4423,
-                        )
-
-                      // Tiny canopy
-                      graphics
-                        .rect(
-                          treeX + 1,
-                          treeY + 1,
-                          6,
-                          5,
-                        )
-                        .fill(
-                          0x123d1f,
-                        )
+                >
+                  <pixiSprite
+                    texture={
+                      chunk.texture
                     }
-                  }}
-                />
-              </pixiContainer>
-            )
-          },
-        )}
-      </pixiContainer>
+                    x={0}
+                    y={0}
+                    width={
+                      chunk.width *
+                      TILE_SIZE
+                    }
+                    height={
+                      chunk.height *
+                      TILE_SIZE
+                    }
+                  />
 
-      {/* Transparent interaction layer */}
-      <pixiGraphics
-        eventMode="static"
-        cursor={
-          dragging
-            ? 'grabbing'
-            : 'grab'
-        }
-        draw={(graphics) => {
-          graphics.clear()
+                  <pixiGraphics
+                    draw={(
+                      graphics,
+                    ) => {
+                      graphics.clear()
 
-          graphics
-            .rect(
-              0,
-              0,
-              VIEWPORT_WIDTH,
-              VIEWPORT_HEIGHT,
-            )
-            .fill({
-              color: 0x000000,
-              alpha: 0,
-            })
-        }}
-        onPointerDown={(
-          event:
-            FederatedPointerEvent,
-        ) => {
-          setDragging(true)
+                      for (
+                        const tree
+                        of chunk.trees
+                      ) {
+                        const treeX =
+                          tree.x *
+                          TILE_SIZE
 
-          lastPointerRef.current = {
-            x: event.global.x,
-            y: event.global.y,
+                        const treeY =
+                          tree.y *
+                          TILE_SIZE
+
+                        graphics
+                          .rect(
+                            treeX + 3,
+                            treeY + 4,
+                            2,
+                            4,
+                          )
+                          .fill(
+                            0x6b4423,
+                          )
+
+                        graphics
+                          .rect(
+                            treeX + 1,
+                            treeY + 1,
+                            6,
+                            5,
+                          )
+                          .fill(
+                            0x123d1f,
+                          )
+                      }
+                    }}
+                  />
+                </pixiContainer>
+              )
+            },
+          )}
+
+          {/* All monkeys are drawn in one batch. */}
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear()
+
+              for (
+                const monkey
+                of monkeys
+              ) {
+                const monkeyX =
+                  monkey.x *
+                  TILE_SIZE
+
+                const monkeyY =
+                  monkey.y *
+                  TILE_SIZE
+
+                const selected =
+                  monkey.id ===
+                  selectedMonkeyId
+
+                graphics
+                  .rect(
+                    monkeyX - 4,
+                    monkeyY - 4,
+                    TILE_SIZE * 2,
+                    TILE_SIZE * 2,
+                  )
+                  .fill(0x6b4423)
+              }
+            }}
+          />
+        </pixiContainer>
+
+        <pixiGraphics
+          eventMode="static"
+          cursor={
+            dragging
+              ? 'grabbing'
+              : 'grab'
           }
-        }}
-        onPointerMove={(
-          event:
-            FederatedPointerEvent,
-        ) => {
-          if (!dragging) {
-            return
-          }
+          draw={(graphics) => {
+            graphics.clear()
 
-          const currentX =
-            event.global.x
+            graphics
+              .rect(
+                0,
+                0,
+                VIEWPORT_WIDTH,
+                VIEWPORT_HEIGHT,
+              )
+              .fill({
+                color: 0x000000,
+                alpha: 0,
+              })
+          }}
+          onPointerDown={(
+            event:
+              FederatedPointerEvent,
+          ) => {
+            setDragging(true)
 
-          const currentY =
-            event.global.y
+            lastPointerRef.current = {
+              x: event.global.x,
+              y: event.global.y,
+            }
+          }}
+          onPointerMove={(
+            event:
+              FederatedPointerEvent,
+          ) => {
+            if (!dragging) {
+              return
+            }
 
-          const dx =
-            currentX -
-            lastPointerRef.current.x
+            const currentX =
+              event.global.x
 
-          const dy =
-            currentY -
-            lastPointerRef.current.y
+            const currentY =
+              event.global.y
 
-          cameraRef.current.x +=
-            dx
+            const dx =
+              currentX -
+              lastPointerRef.current.x
 
-          cameraRef.current.y +=
-            dy
+            const dy =
+              currentY -
+              lastPointerRef.current.y
 
-          if (
-            containerRef.current
-          ) {
-            containerRef.current.x =
-              cameraRef.current.x
+            cameraRef.current.x +=
+              dx
 
-            containerRef.current.y =
-              cameraRef.current.y
-          }
+            cameraRef.current.y +=
+              dy
 
-          lastPointerRef.current = {
-            x: currentX,
-            y: currentY,
-          }
+            if (
+              containerRef.current
+            ) {
+              containerRef.current.x =
+                cameraRef.current.x
 
-          scheduleViewUpdate()
-        }}
-        onPointerUp={() => {
-          setDragging(false)
-          updateVisibleChunks()
-        }}
-        onPointerUpOutside={() => {
-          setDragging(false)
-          updateVisibleChunks()
-        }}
-      />
-    </Application>
+              containerRef.current.y =
+                cameraRef.current.y
+            }
+
+            lastPointerRef.current = {
+              x: currentX,
+              y: currentY,
+            }
+
+            scheduleViewUpdate()
+          }}
+          onPointerUp={(
+            event:
+              FederatedPointerEvent,
+          ) => {
+            setDragging(false)
+
+            const movementX =
+              Math.abs(
+                event.global.x -
+                  lastPointerRef.current.x,
+              )
+
+            const movementY =
+              Math.abs(
+                event.global.y -
+                  lastPointerRef.current.y,
+              )
+
+            if (
+              movementX < 3 &&
+              movementY < 3
+            ) {
+              handleWorldClick(
+                event,
+              )
+            }
+
+            updateVisibleChunks()
+          }}
+          onPointerUpOutside={() => {
+            setDragging(false)
+            updateVisibleChunks()
+          }}
+        />
+      </Application>
+
+      {selectedMonkey && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            width: 220,
+            border:
+              '1px solid #cccccc',
+            borderRadius: 8,
+          }}
+        >
+          <strong>
+            Monkey #
+            {selectedMonkey.id}
+          </strong>
+
+          <div>
+            Position:{' '}
+            {selectedMonkey.x},{' '}
+            {selectedMonkey.y}
+          </div>
+
+          <div>
+            Hunger:{' '}
+            {selectedMonkey.hunger}
+          </div>
+
+          <div>
+            State:{' '}
+            {selectedMonkey.state}
+          </div>
+
+          {selectedMonkey.target && (
+            <div>
+              Target:{' '}
+              {
+                selectedMonkey
+                  .target.x
+              }
+              ,{' '}
+              {
+                selectedMonkey
+                  .target.y
+              }
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

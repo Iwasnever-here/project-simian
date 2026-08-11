@@ -1,0 +1,4 @@
+- basic world
+- trees and food 
+- mini map
+- panable map

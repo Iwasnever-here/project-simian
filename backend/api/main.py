@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -5,10 +8,46 @@ from fastapi.middleware.gzip import GZipMiddleware
 from backend.simulation.world.world import World
 
 
-app = FastAPI()
+SIMULATION_TICK_SECONDS = 1.0
 
-# Compresses repetitive chunk/terrain JSON well - cheap win, no client changes needed
-app.add_middleware(GZipMiddleware, minimum_size=500)
+world = World(300, 300)
+
+
+async def simulation_loop():
+    while True:
+        world.update()
+
+        await asyncio.sleep(
+            SIMULATION_TICK_SECONDS,
+        )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    simulation_task = asyncio.create_task(
+        simulation_loop()
+    )
+
+    try:
+        yield
+    finally:
+        simulation_task.cancel()
+
+        try:
+            await simulation_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(
+    lifespan=lifespan,
+)
+
+
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=500,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,34 +61,72 @@ app.add_middleware(
 )
 
 
-world = World(300, 300)
-
-
 @app.get("/")
 def root():
     return {
-        "message": "Simian Engine API"
+        "message": "Simian Engine API",
     }
 
 
 @app.get("/world/meta")
 def get_world_meta():
-    # Frontend fetches this once on load - no tile data, just dimensions
     return world.meta()
 
 
 @app.get("/world/chunk/{cx}/{cy}")
-def get_world_chunk(cx: int, cy: int):
-    max_cx = (world.width - 1) // world.chunk_size
-    max_cy = (world.height - 1) // world.chunk_size
+def get_world_chunk(
+    cx: int,
+    cy: int,
+):
+    max_cx = (
+        world.width - 1
+    ) // world.chunk_size
 
-    if not (0 <= cx <= max_cx and 0 <= cy <= max_cy):
-        raise HTTPException(status_code=404, detail="Chunk out of range")
+    max_cy = (
+        world.height - 1
+    ) // world.chunk_size
 
-    return world.get_chunk(cx, cy)
+    if not (
+        0 <= cx <= max_cx
+        and 0 <= cy <= max_cy
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Chunk out of range",
+        )
+
+    return world.get_chunk(
+        cx,
+        cy,
+    )
 
 
 @app.get("/world/thumbnail")
 def get_world_thumbnail():
-    # Small pre-downsampled terrain map for the minimap - fetched once
     return world.thumbnail()
+
+
+@app.post("/world/monkeys")
+def spawn_monkey(
+    x: int,
+    y: int,
+):
+    monkey = world.spawn_monkey(
+        x,
+        y,
+    )
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot spawn monkey here",
+        )
+
+    return monkey.to_dict()
+
+
+@app.get("/world/monkeys")
+def get_monkeys():
+    return {
+        "monkeys": world.get_monkeys(),
+    }
