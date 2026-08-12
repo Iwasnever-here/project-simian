@@ -1,3 +1,5 @@
+import random
+
 import opensimplex
 
 from backend.simulation.world.tile import Tile
@@ -70,6 +72,13 @@ TREE_SPECIES_SCALE = 0.05
 FOREST_TREE_THRESHOLD = 0.2
 GRASS_TREE_THRESHOLD = 0.6
 FRUIT_TREE_THRESHOLD = 0.25
+
+# ---------------------------------------------------------------------
+# Monkey spawning
+# ---------------------------------------------------------------------
+
+SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
+SPAWN_MAX_ATTEMPTS = 200
 
 
 class World:
@@ -302,14 +311,6 @@ class World:
 
         return tree.harvest_fruit(amount)
 
-    def harvest_tree_wood(self, x, y, amount=1):
-        tree = self.get_tree(x, y)
-
-        if tree is None:
-            return 0
-
-        return tree.harvest_wood(amount)
-
     def meta(self):
         return {
             "width": self.width,
@@ -388,6 +389,23 @@ class World:
         self.next_monkey_id += 1
 
         return monkey
+
+    def spawn_random_monkey(self, max_attempts=SPAWN_MAX_ATTEMPTS):
+        # Picks a random tile and retries until it lands on spawnable
+        # ground. Fine for occasional single spawns via a button; if this
+        # ever needs to spawn many monkeys at once, switch to sampling
+        # from a precomputed list of valid tiles instead of retry-until-hit.
+        for _ in range(max_attempts):
+            x = random.randrange(self.width)
+            y = random.randrange(self.height)
+
+            tile = self.grid[x][y]
+            if tile.terrain in SPAWNABLE_TERRAIN_BLOCKLIST:
+                continue
+
+            return self.spawn_monkey(x, y)
+
+        return None
 
     def get_monkeys(self):
         return [

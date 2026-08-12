@@ -106,27 +106,22 @@ def get_world_thumbnail():
     return world.thumbnail()
 
 
-@app.post("/world/monkeys")
-def spawn_monkey(
-    x: int,
-    y: int,
-):
-    monkey = world.spawn_monkey(
-        x,
-        y,
-    )
+@app.post("/monkeys/spawn")
+def spawn_monkey():
+    monkey = world.spawn_random_monkey()
 
     if monkey is None:
         raise HTTPException(
-            status_code=400,
-            detail="Cannot spawn monkey here",
+            status_code=409,
+            detail=(
+                "Could not find a spawnable "
+                "tile - try again"
+            ),
         )
 
     return monkey.to_dict()
 
 
-@app.get("/world/monkeys")
+@app.get("/monkeys")
 def get_monkeys():
-    return {
-        "monkeys": world.get_monkeys(),
-    }
+    return world.get_monkeys()
