@@ -123,6 +123,18 @@ def spawn_monkey():
 def get_monkeys():
     return world.get_monkeys()
 
+@app.get("/monkeys/{monkey_id}")
+def get_monkey(monkey_id: int):
+    monkey = world.get_monkey(monkey_id)
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Monkey not found",
+        )
+
+    return monkey.to_dict()
+
 @app.post("/simulation/pause")
 def pause_simulation():
     global simulation_paused

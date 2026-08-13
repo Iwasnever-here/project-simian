@@ -27,6 +27,7 @@ type WorldCanvasProps = {
   worldMeta: WorldMeta
   apiBase: string
   onViewportChange?: (viewport: Viewport) => void
+  onMonkeySelect?: (monkeyId: number | null) => void
 }
 
 type TreeData = {
@@ -74,6 +75,8 @@ const MIN_ZOOM = 0.5
 const MAX_ZOOM = 4
 const ZOOM_SPEED = 0.0015
 
+
+
 const TERRAIN_COLOR: Record<string, [number, number, number]> = {
   w: [30, 144, 255],
   s: [245, 222, 179],
@@ -88,7 +91,7 @@ function chunkKey(cx: number, cy: number) {
   return `${cx}:${cy}`
 }
 
-function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps) {
+function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect }: WorldCanvasProps) {
   const { width, height, chunkSize } = worldMeta
 
   const chunkPixelSize = chunkSize * TILE_SIZE
@@ -104,7 +107,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps)
   const [dragging, setDragging] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
-  const [selectedMonkeyId, setSelectedMonkeyId] = useState<number | null>(null)
+  
   const [, bumpVersion] = useState(0)
 
   const forceRender = useCallback(() => {
@@ -201,10 +204,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps)
     }
   }, [loadMonkeys])
 
-  const selectedMonkey =
-    selectedMonkeyId === null
-      ? null
-      : monkeys.find((monkey) => monkey.id === selectedMonkeyId) ?? null
+  
 
   const updateVisibleChunks = useCallback(() => {
     const { x: cameraX, y: cameraY, zoom: cameraZoom } = cameraRef.current
@@ -284,27 +284,29 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps)
   }, [])
 
   const handleWorldClick = useCallback(
-    (event: FederatedPointerEvent) => {
-      const camera = cameraRef.current
+  (event: FederatedPointerEvent) => {
+    const camera = cameraRef.current
 
-      /*
-       * Screen coordinate -> world coordinate.
-       * Zoom must be undone before finding tile.
-       */
-      const worldPixelX = (event.global.x - camera.x) / camera.zoom
-      const worldPixelY = (event.global.y - camera.y) / camera.zoom
+    const worldPixelX =(event.global.x - camera.x) /camera.zoom
 
-      const tileX = Math.floor(worldPixelX / TILE_SIZE)
-      const tileY = Math.floor(worldPixelY / TILE_SIZE)
+    const worldPixelY =(event.global.y - camera.y) /camera.zoom
 
-      const monkey = monkeys.find(
-        (candidate) => candidate.x === tileX && candidate.y === tileY,
-      )
+    const tileX = Math.floor(worldPixelX / TILE_SIZE,)
 
-      setSelectedMonkeyId(monkey?.id ?? null)
-    },
-    [monkeys],
-  )
+    const tileY = Math.floor(
+      worldPixelY / TILE_SIZE,
+    )
+
+    const monkey = monkeys.find(
+      (candidate) =>
+        candidate.x === tileX &&
+        candidate.y === tileY,
+    )
+
+    onMonkeySelect?.(monkey?.id ?? null)
+  },
+  [monkeys, onMonkeySelect],
+)
 
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
@@ -357,7 +359,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps)
   return (
     <div>
       <div
-        style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }}
+        style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT, }}
         onWheel={handleWheel}
       >
         <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x1e90ff}>
@@ -480,41 +482,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange }: WorldCanvasProps)
 
       <div style={{ marginTop: 8, fontSize: 14 }}>
         Zoom: {Math.round(zoom * 100)}%
-      </div>
-
-      {selectedMonkey && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            width: 220,
-            border: '1px solid #cccccc',
-            borderRadius: 8,
-          }}
-        >
-          <strong>Monkey 0{selectedMonkey.id}</strong>
-
-          <div>Age: {selectedMonkey.age}</div>
-
-          <div>
-            Position: {selectedMonkey.x}, {selectedMonkey.y}
-          </div>
-
-          <div>Hunger: {selectedMonkey.hunger}</div>
-
-          
-
-          <div>Energy: {selectedMonkey.energy}</div>
-
-          <div>State: {selectedMonkey.state}</div>
-
-          {selectedMonkey.target && (
-            <div>
-              Target: {selectedMonkey.target.x}, {selectedMonkey.target.y}
-            </div>
-          )}
-        </div>
-      )}
+      </div> 
     </div>
   )
 }

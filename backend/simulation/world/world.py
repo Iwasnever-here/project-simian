@@ -80,6 +80,13 @@ FRUIT_TREE_THRESHOLD = 0.25
 SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
 SPAWN_MAX_ATTEMPTS = 200
 
+# ---------------------------------------------------------------------
+# World Settings
+# ---------------------------------------------------------------------
+TICKS_PER_DAY = 120
+DAY_START = 30
+NIGHT_START = 90
+
 
 class World:
     def __init__(self, width, height):
@@ -100,6 +107,9 @@ class World:
         # Terrain is still generated once at startup for now. Later this
         # can also move to lazy chunk generation if worlds become huge.
         self.grid = [[None] * height for _ in range(width)]
+
+        self.tick = 0
+        self.day = 0
 
 
         self.monkeys: dict[int, Monkey] = {}
@@ -316,6 +326,10 @@ class World:
             "width": self.width,
             "height": self.height,
             "chunkSize": self.chunk_size,
+            "tick": self.tick,
+            "day": self.day,
+            "hour": round(self.get_hour_of_day(),  1),
+            "isDaytime": self.is_daytime(),
         }
 
     def get_chunk(self, cx, cy):
@@ -413,10 +427,21 @@ class World:
             for monkey in self.monkeys.values()
         ]
 
+    def get_monkey(self, monkey_id):
+        return self.monkeys.get(monkey_id)
+
     def thumbnail(self):
         return self._thumbnail
 
     def update(self):
+        self.tick += 1
+
+        if self.tick >= TICKS_PER_DAY:
+            self.tick = 0
+            self.day += 1
+
+            self._handle_new_day()
+
         for monkey in self.monkeys.values():
             monkey.update(self)
 
@@ -470,5 +495,21 @@ class World:
                 nearest_distance = distance
 
         return nearest_tree
+
     def get_monkey_by_id(self, monkey_id):
         return self.monkeys.get(monkey_id)
+
+    def _handle_new_day(self):
+        for monkey in self.monkeys.values():
+            monkey.age += 1
+
+    def is_daytime(self):
+        hour = self.get_hour_of_day()
+        return 6 <= hour < 18
+
+    def is_nighttime(self):
+        hour = self.get_hour_of_day()
+        return hour < 6 or hour >= 18
+
+    def get_hour_of_day(self):
+        return (self.tick  / TICKS_PER_DAY ) * 24

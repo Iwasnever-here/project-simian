@@ -6,6 +6,9 @@ type WorldMeta = {
   width: number
   height: number
   chunkSize: number
+  day: number
+  hour: number
+  isDaytime: boolean
 }
 
 type Viewport = {
@@ -20,6 +23,19 @@ type SimulationStatus = {
   speed: number
 }
 
+type Monkey = {
+  id: number
+  x: number
+  y: number
+  hunger: number
+  age: number
+  energy: number
+  state: string
+}
+
+
+
+
 const API_BASE = 'http://127.0.0.1:8000'
 
 function App() {
@@ -31,21 +47,52 @@ function App() {
 const [paused, setPaused] = useState<boolean | null>(null)
 const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
 
-  useEffect(() => {
-    fetch(`${API_BASE}/world/meta`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
+const [selectedMonkeyId, setSelectedMonkeyId] = useState<number | null>(null)
 
-        return response.json()
-      })
-      .then((data: WorldMeta) => {
-        setWorldMeta(data)
-      })
-      .catch((error) => {
-        console.error('World meta fetch failed:', error)
-      })
+const [selectedMonkey, setSelectedMonkey] = useState<Monkey | null>(null)
+
+const formatTime = (hour: number) => {
+  const wholeHour = Math.floor(hour)
+  const minutes = Math.floor(
+    (hour - wholeHour) * 60,
+  )
+
+  return `${String(wholeHour).padStart(2, '0')}:${String(
+    minutes,
+  ).padStart(2, '0')}`
+}
+
+  useEffect(() => {
+    const fetchWorldMeta = () => {
+      fetch(`${API_BASE}/world/meta`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+
+          return response.json()
+        })
+        .then((data: WorldMeta) => {
+          setWorldMeta(data)
+        })
+        .catch((error) => {
+          console.error(
+            'World meta fetch failed:',
+            error,
+          )
+        })
+    }
+
+    fetchWorldMeta()
+
+    const interval = window.setInterval(
+      fetchWorldMeta,
+      1000,
+    )
+
+    return () => {
+      window.clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -85,6 +132,44 @@ const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
       )
     })
 }, [])
+
+useEffect(() => {
+  if (selectedMonkeyId === null) {
+    setSelectedMonkey(null)
+    return
+  }
+
+  const fetchSelectedMonkey = () => {
+    fetch(`${API_BASE}/monkeys/${selectedMonkeyId}`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        return response.json()
+      })
+      .then((data: Monkey) => {
+        setSelectedMonkey(data)
+      })
+      .catch((error) => {
+        console.error(
+          'Selected monkey fetch failed:',
+          error,
+        )
+      })
+  }
+
+  fetchSelectedMonkey()
+
+  const interval = window.setInterval(
+    fetchSelectedMonkey,
+    1000,
+  )
+
+  return () => {
+    window.clearInterval(interval)
+  }
+}, [selectedMonkeyId])
 
   const handleSpawnMonkey = () => {
     setSpawning(true)
@@ -191,21 +276,61 @@ const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
   }
 
   return (
+  <div
+    style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+    }}
+  >
+    {/* Top bar */}
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
+        width: 'min(1400px, 95vw)',
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
         alignItems: 'center',
+        padding: '16px 0',
       }}
     >
-      <h1>Project Simian</h1>
-
+      {/* Left - world time */}
       <div
         style={{
-          marginBottom: 12,
           display: 'flex',
-          gap: 8,
+          justifyContent: 'flex-start',
+        }}
+      >
+        {worldMeta && (
+          <span
+            style={{
+              fontSize: 18,
+            }}
+          >
+            Day {worldMeta.day} · {formatTime(worldMeta.hour)}
+            {' '}
+            {worldMeta.isDaytime ? '☀️' : '🌙'}
+          </span>
+        )}
+      </div>
+
+      {/* Centre - title */}
+      <h1
+        style={{
+          margin: 0,
+          fontSize: 42,
+        }}
+      >
+        Project Simian
+      </h1>
+
+      {/* Right - simulation controls */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
           alignItems: 'center',
+          gap: 8,
         }}
       >
         <button
@@ -243,8 +368,22 @@ const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
           </button>
         ))}
       </div>
+    </div>
 
-      {worldMeta && (
+    {/* Main simulation area */}
+    {worldMeta && (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '240px 800px 240px',
+          gap: 24,
+          alignItems: 'start',
+        }}
+      >
+        {/* Empty left column keeps map centred */}
+        <div />
+
+        {/* World */}
         <div
           style={{
             position: 'relative',
@@ -256,6 +395,7 @@ const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
             worldMeta={worldMeta}
             apiBase={API_BASE}
             onViewportChange={setViewport}
+            onMonkeySelect={setSelectedMonkeyId}
           />
 
           <Minimap
@@ -264,9 +404,61 @@ const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
             apiBase={API_BASE}
           />
         </div>
-      )}
-    </div>
-  )
+
+        {/* Monkey information */}
+        <div>
+          {selectedMonkey && (
+            <div
+              style={{
+                padding: 16,
+                width: 220,
+                border: '1px solid #cccccc',
+                borderRadius: 8,
+              }}
+            >
+              <h3
+                style={{
+                  marginTop: 0,
+                }}
+              >
+                Monkey 0{selectedMonkey.id}
+              </h3>
+
+              <div>
+                Age: {selectedMonkey.age} days
+              </div>
+
+              <div>
+                Position: {selectedMonkey.x}, {selectedMonkey.y}
+              </div>
+
+              <div>
+                Hunger: {selectedMonkey.hunger}
+              </div>
+
+              <div>
+                Energy: {selectedMonkey.energy}
+              </div>
+
+              <div>
+                State: {selectedMonkey.state}
+              </div>
+
+              <button
+                onClick={() => setSelectedMonkeyId(null)}
+                style={{
+                  marginTop: 12,
+                }}
+              >
+                Close
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)
 }
 
 export default App
