@@ -2,15 +2,25 @@ from dataclasses import dataclass
 import random
 
 
+
 WANDER_STATE = "wandering"
 SEEKING_FOOD_STATE = "seeking_food"
 EATING_STATE = "eating"
+SLEEPING_STATE = "sleeping"
+SEEKING_SHELTER_STATE = "seeking_shelter"
 
 HUNGER_PER_TICK = 0.5
 FOOD_SEEK_THRESHOLD = 60.0
 MAX_HUNGER = 100.0
 
 FRUIT_HUNGER_REDUCTION = 25.0
+
+ENERGY_PER_TICK = 0.1
+SLEEP_ENERGY_THRESHOLD = 30.0
+WAKE_ENERGY_THRESHOLD = 80.0
+MAX_ENERGY = 100.0
+
+SLEEP_ENERGY_RECOVERY = 1.0
 
 MOVEMENT_DIRECTIONS = [
     (1, 0),
@@ -30,6 +40,8 @@ class Monkey:
     x: int
     y: int
     hunger: float = 0.0
+    age: int = 0
+    energy: float = 100.0
     state: str = WANDER_STATE
     target_x: int | None = None
     target_y: int | None = None
@@ -37,8 +49,24 @@ class Monkey:
     def update(self, world):
         self._increase_hunger()
 
+        # If already sleeping, stay asleep until recovered.
+        if self.state == SLEEPING_STATE:
+            self._sleep(world)
+            return
+
+        self._decrease_energy()
+
+        # Food currently has higher priority than sleep.
         if self.hunger >= FOOD_SEEK_THRESHOLD:
             self._handle_food_seeking(world)
+            return
+
+        # Low energy means find somewhere to sleep.
+        if (
+            self.energy <= SLEEP_ENERGY_THRESHOLD
+            or self.state == SEEKING_SHELTER_STATE
+        ):
+            self._handle_seeking_shelter(world)
             return
 
         self.state = WANDER_STATE
@@ -208,6 +236,8 @@ class Monkey:
             "x": self.x,
             "y": self.y,
             "hunger": round(self.hunger, 1),
+            "age": self.age,
+            "energy": round(self.energy, 1),
             "state": self.state,
             "target": {
                 "x": self.target_x,
@@ -217,5 +247,51 @@ class Monkey:
             and self.target_y is not None
             else None,
         }
+
+    def _decrease_energy(self):
+        self.energy = max(
+            0.0,
+            self.energy - ENERGY_PER_TICK,
+        )
+
+ 
+    def _handle_seeking_shelter(self, world):
+        self.state = SEEKING_SHELTER_STATE
+
+        if self.target_x is None or self.target_y is None:
+            target = world.find_nearest_shelter(
+                self.x,
+                self.y,
+            )
+
+            if target is None:
+                self._wander(world)
+                return
+
+            self.set_target(
+                target.x,
+                target.y,
+            )
+
+        if self._is_at_target():
+            self._start_sleeping()
+            return
+
+        self._move_toward_target(world)
+
+    def _start_sleeping(self):
+        self.state = SLEEPING_STATE
+        self.clear_target()
+
+
+    def _sleep(self, world):
+        self.energy = min(
+            MAX_ENERGY,
+            self.energy + SLEEP_ENERGY_RECOVERY,
+        )
+
+        if self.energy >= WAKE_ENERGY_THRESHOLD:
+            self.state = WANDER_STATE
+
 
  

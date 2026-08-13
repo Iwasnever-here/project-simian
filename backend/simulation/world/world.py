@@ -421,6 +421,7 @@ class World:
             monkey.update(self)
 
     def find_nearest_fruit_tree(self, x, y):
+    
         nearest_tree = None
         nearest_distance = None
     
@@ -444,3 +445,30 @@ class World:
                 nearest_distance = distance
     
         return nearest_tree
+
+    def find_nearest_shelter(self, x, y):
+        nearest_tree = None
+        nearest_distance = None
+
+        for tree in self.trees.values():
+            if not tree.alive:
+                continue
+
+            if tree.wood <= 0:
+                continue
+
+            distance = (
+                abs(tree.x - x)
+                + abs(tree.y - y)
+            )
+
+            if (
+                nearest_distance is None
+                or distance < nearest_distance
+            ):
+                nearest_tree = tree
+                nearest_distance = distance
+
+        return nearest_tree
+    def get_monkey_by_id(self, monkey_id):
+        return self.monkeys.get(monkey_id)
