@@ -10,16 +10,18 @@ from backend.simulation.world.world import World
 
 SIMULATION_TICK_SECONDS = 1.0
 
+simulation_paused = False
+simulation_speed = 1.0
+
 world = World(300, 300)
 
 
 async def simulation_loop():
     while True:
-        world.update()
+        if not simulation_paused:
+            world.update()
 
-        await asyncio.sleep(
-            SIMULATION_TICK_SECONDS,
-        )
+        await asyncio.sleep(SIMULATION_TICK_SECONDS / simulation_speed) 
 
 
 @asynccontextmanager
@@ -39,15 +41,10 @@ async def lifespan(app: FastAPI):
             pass
 
 
-app = FastAPI(
-    lifespan=lifespan,
-)
+app = FastAPI(lifespan=lifespan,)
 
 
-app.add_middleware(
-    GZipMiddleware,
-    minimum_size=500,
-)
+app.add_middleware( GZipMiddleware,minimum_size=500,)
 
 app.add_middleware(
     CORSMiddleware,
@@ -125,3 +122,58 @@ def spawn_monkey():
 @app.get("/monkeys")
 def get_monkeys():
     return world.get_monkeys()
+
+@app.post("/simulation/pause")
+def pause_simulation():
+    global simulation_paused
+
+    simulation_paused = True
+
+    return {
+        "paused": simulation_paused,
+        "speed": simulation_speed,
+    }
+
+
+@app.post("/simulation/resume")
+def resume_simulation():
+    global simulation_paused
+
+    simulation_paused = False
+
+    return {
+        "paused": simulation_paused,
+        "speed": simulation_speed,
+    }
+
+
+@app.post("/simulation/speed/{speed}")
+def set_simulation_speed(speed: float):
+    global simulation_speed
+
+    allowed_speeds = {
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+    }
+
+    if speed not in allowed_speeds:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid simulation speed",
+        )
+
+    simulation_speed = speed
+
+    return {
+        "paused": simulation_paused,
+        "speed": simulation_speed,
+    }
+
+@app.get("/simulation/status")
+def get_simulation_status():
+    return {
+        "paused": simulation_paused,
+        "speed": simulation_speed,
+    }
