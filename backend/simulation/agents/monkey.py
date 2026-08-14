@@ -20,7 +20,13 @@ SLEEP_ENERGY_THRESHOLD = 30.0
 WAKE_ENERGY_THRESHOLD = 80.0
 MAX_ENERGY = 100.0
 
+MAX_STARVING_TICK = 20
+MAX_EXHAUSTED_TICK = 20
+MAX_AGE_DAYS = 3650
+
 SLEEP_ENERGY_RECOVERY = 1.0
+
+VISION_RANGE = 5
 
 MOVEMENT_DIRECTIONS = [
     (1, 0),
@@ -45,17 +51,23 @@ class Monkey:
     state: str = WANDER_STATE
     target_x: int | None = None
     target_y: int | None = None
+    starving_ticks: int = 0
+    exhausted_ticks: int = 0
+    alive: bool = True
 
     def update(self, world):
+        if not self.alive:
+            return
+
+        
         self._increase_hunger()
+        self._decrease_energy()
+        self._update_survival()
 
         # If already sleeping, stay asleep until recovered.
         if self.state == SLEEPING_STATE:
             self._sleep(world)
             return
-
-        self._decrease_energy()
-
         # Food currently has higher priority than sleep.
         if self.hunger >= FOOD_SEEK_THRESHOLD:
             self._handle_food_seeking(world)
@@ -83,10 +95,7 @@ class Monkey:
         self.state = SEEKING_FOOD_STATE
 
         if self.target_x is None or self.target_y is None:
-            target = world.find_nearest_fruit_tree(
-                self.x,
-                self.y,
-            )
+            target = self._find_visible_food(world)
 
             if target is None:
                 self._wander(world)
@@ -293,5 +302,90 @@ class Monkey:
         if self.energy >= WAKE_ENERGY_THRESHOLD:
             self.state = WANDER_STATE
 
+    def _update_survival(self):
+        if self.hunger >= MAX_HUNGER:
+            self.starving_ticks += 1
+        else:
+            self.starving_ticks = 0
 
- 
+        if self.energy <= 0:
+            self.exhausted_ticks += 1
+        else:
+            self.exhausted_ticks = 0
+
+        if self.starving_ticks >= MAX_STARVING_TICK:
+            self.alive = False
+            return
+
+        if self.exhausted_ticks >= MAX_EXHAUSTED_TICK:
+            self.alive = False
+            return
+
+        if self.age >= MAX_AGE_DAYS:
+            self.alive = False
+
+    def _find_visible_food(self, world):
+        print(
+            f"\nMonkey {self.id}: "
+            f"pos=({self.x}, {self.y}), "
+            f"hunger={self.hunger}"
+        )
+
+        current_tree = world.get_tree(
+            self.x,
+            self.y,
+        )
+
+        if current_tree:
+            print(
+                "TREE UNDER MONKEY:",
+                current_tree.species,
+                "fruit:",
+                current_tree.fruit,
+            )
+        else:
+            print("NO TREE UNDER MONKEY")
+
+        nearby_trees = []
+
+        for tree in world.trees.values():
+            distance = max(
+                abs(tree.x - self.x),
+                abs(tree.y - self.y),
+            )
+
+            if distance <= VISION_RANGE:
+                nearby_trees.append(tree)
+
+        print(
+            "ALL NEARBY TREES:",
+            [
+                (
+                    tree.x,
+                    tree.y,
+                    tree.species,
+                    tree.fruit,
+                )
+                for tree in nearby_trees
+            ],
+        )
+
+        trees = world.get_visible_fruit_trees(
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+
+        print(
+            f"VISIBLE FOOD: {len(trees)}"
+        )
+
+        if not trees:
+            return None
+
+        return min(
+            trees,
+            key=lambda tree:
+                abs(tree.x - self.x)
+                + abs(tree.y - self.y),
+        )

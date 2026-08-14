@@ -71,7 +71,7 @@ TREE_SPECIES_SCALE = 0.05
 
 FOREST_TREE_THRESHOLD = 0.2
 GRASS_TREE_THRESHOLD = 0.6
-FRUIT_TREE_THRESHOLD = 0.25
+FRUIT_TREE_THRESHOLD = 0.00
 
 # ---------------------------------------------------------------------
 # Monkey spawning
@@ -445,6 +445,11 @@ class World:
         for monkey in self.monkeys.values():
             monkey.update(self)
 
+        dead_ids = [monkey_id for monkey_id, monkey in self.monkeys.items() if not monkey.alive]
+
+        for monkey_id in dead_ids:
+            del self.monkeys[monkey_id]
+
         for tree in self.trees.values():
             tree.update()
 
@@ -516,3 +521,39 @@ class World:
 
     def get_hour_of_day(self):
         return (self.tick  / TICKS_PER_DAY ) * 24
+
+    def get_visible_fruit_trees(self, x, y, vision_range):
+        min_x = max(0, x - vision_range)
+        max_x = min(self.width - 1, x + vision_range)
+
+        min_y = max(0, y - vision_range)
+        max_y = min(self.height - 1, y + vision_range)
+
+        min_cx = min_x // self.chunk_size
+        max_cx = max_x // self.chunk_size
+
+        min_cy = min_y // self.chunk_size
+        max_cy = max_y // self.chunk_size
+
+        for cy in range(min_cy, max_cy + 1):
+            for cx in range(min_cx, max_cx + 1):
+                self._ensure_trees_for_chunk(cx, cy)
+
+        visible = []
+
+        for tree in self.trees.values():
+            if not tree.alive:
+                continue
+
+            if tree.fruit <= 0:
+                continue
+
+            distance = max(
+                abs(tree.x - x),
+                abs(tree.y - y),
+            )
+
+            if distance <= vision_range:
+                visible.append(tree)
+
+        return visible
