@@ -445,6 +445,9 @@ class World:
         for monkey in self.monkeys.values():
             monkey.update(self)
 
+        for tree in self.trees.values():
+            tree.update()
+
     def find_nearest_fruit_tree(self, x, y):
     
         nearest_tree = None

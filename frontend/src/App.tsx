@@ -255,26 +255,6 @@ useEffect(() => {
     }
   }
 
-  const handleSingleTick = async () => {
-    try {
-      const response = await fetch(
-        `${API_BASE}/simulation/tick`,
-        {
-          method: 'POST',
-        },
-      )
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-    } catch (error) {
-      console.error(
-        'Simulation tick failed:',
-        error,
-      )
-    }
-  }
-
   return (
   <div
     style={{
@@ -295,12 +275,7 @@ useEffect(() => {
       }}
     >
       {/* Left - world time */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-start',
-        }}
-      >
+      <div style={{display: 'flex', justifyContent: 'flex-start',}}>
         {worldMeta && (
           <span
             style={{
@@ -315,12 +290,7 @@ useEffect(() => {
       </div>
 
       {/* Centre - title */}
-      <h1
-        style={{
-          margin: 0,
-          fontSize: 42,
-        }}
-      >
+      <h1 style={{margin: 0,fontSize: 42,}}>
         Project Simian
       </h1>
 
@@ -396,6 +366,7 @@ useEffect(() => {
             apiBase={API_BASE}
             onViewportChange={setViewport}
             onMonkeySelect={setSelectedMonkeyId}
+            hour = {worldMeta.hour}
           />
 
           <Minimap

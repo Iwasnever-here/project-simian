@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+MAX_FRUIT = 5
+FRUIT_REGROW_TICKS = 30
+
 @dataclass
 class Tree:
     x: int
@@ -9,7 +12,8 @@ class Tree:
 
     wood: int
     fruit: int
-    max_fruit: int
+    max_fruit: int = MAX_FRUIT
+    ticks_since_regrow: int = 0
 
     alive: bool = True
 
@@ -22,18 +26,6 @@ class Tree:
 
         return taken
 
-    def harvest_wood(self, amount: int) -> int:
-        if not self.alive:
-            return 0
-
-        taken = min(amount, self.wood)
-        self.wood -= taken
-
-        if self.wood <= 0:
-            self.alive = False
-
-        return taken
-
     def regrow_fruit(self, amount: int = 1):
         if not self.alive:
             return
@@ -42,3 +34,13 @@ class Tree:
             self.max_fruit,
             self.fruit + amount,
         )
+
+    def update(self):
+        if self.fruit >= self.max_fruit:
+            self.ticks_since_regrow = 0
+            return
+        self.ticks_since_regrow += 1
+
+        if self.ticks_since_regrow >= FRUIT_REGROW_TICKS:
+            self.fruit += 1
+            self.ticks_since_regrow = 0

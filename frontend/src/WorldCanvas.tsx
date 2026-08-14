@@ -28,6 +28,7 @@ type WorldCanvasProps = {
   apiBase: string
   onViewportChange?: (viewport: Viewport) => void
   onMonkeySelect?: (monkeyId: number | null) => void
+  hour: number
 }
 
 type TreeData = {
@@ -91,7 +92,7 @@ function chunkKey(cx: number, cy: number) {
   return `${cx}:${cy}`
 }
 
-function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect }: WorldCanvasProps) {
+function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hour }: WorldCanvasProps) {
   const { width, height, chunkSize } = worldMeta
 
   const chunkPixelSize = chunkSize * TILE_SIZE
@@ -109,6 +110,30 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect }: W
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
   
   const [, bumpVersion] = useState(0)
+  const nightAlpha = getNightAlpha(hour)
+
+  function getNightAlpha(hour: number) {
+    // Full daylight: 08:00 - 17:00
+    if (hour >= 8 && hour < 17) {
+      return 0
+    }
+
+    // Sunset: 17:00 - 20:00
+    if (hour >= 17 && hour < 20) {
+      const progress = (hour - 17) / 3
+      return progress * 0.5
+    }
+
+    // Full night: 20:00 - 05:00
+    if (hour >= 20 || hour < 5) {
+      return 0.5
+    }
+
+    // Sunrise: 05:00 - 08:00
+    const progress = (hour - 5) / 3
+
+    return 0.5 * (1 - progress)
+  }
 
   const forceRender = useCallback(() => {
     bumpVersion((version) => version + 1)
@@ -418,6 +443,28 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect }: W
               }}
             />
           </pixiContainer>
+
+          
+
+          {nightAlpha > 0 && (
+            <pixiGraphics
+              draw={(graphics) => {
+                graphics.clear()
+
+                graphics
+                  .rect(
+                    0,
+                    0,
+                    VIEWPORT_WIDTH,
+                    VIEWPORT_HEIGHT,
+                  )
+                  .fill({
+                    color: 0x08111f,
+                    alpha: nightAlpha,
+                  })
+              }}
+            />
+          )}
 
           <pixiGraphics
             eventMode="static"
