@@ -3,6 +3,7 @@ import random
 
 
 
+
 WANDER_STATE = "wandering"
 SEEKING_FOOD_STATE = "seeking_food"
 EATING_STATE = "eating"
@@ -58,6 +59,9 @@ class Monkey:
     alive: bool = True
     food_memory: list[tuple[int, int]] = field(default_factory=list)
     food_memory_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
+    path: list[tuple[int, int]] = field(default_factory=list)
+
+
     def update(self, world):
         if not self.alive:
             return
@@ -116,6 +120,7 @@ class Monkey:
 
             if target is not None:
                 self.set_target(
+                    world,
                     target.x,
                     target.y,
                 )
@@ -127,6 +132,7 @@ class Monkey:
 
                 if remembered_location is not None:
                     self.set_target(
+                        world,
                         remembered_location[0],
                         remembered_location[1],
                     )
@@ -211,52 +217,43 @@ class Monkey:
                 + abs(location[1] - self.y),
         )
 
-    def _move_toward_target(self, world):
-        if self.target_x is None or self.target_y is None:
+    def _move_toward_target(
+        self,
+        world,
+    ):
+        if (
+            self.target_x is None
+            or self.target_y is None
+        ):
             return
 
-        dx = self._direction_to(
-            self.target_x - self.x,
-        )
-
-        dy = self._direction_to(
-            self.target_y - self.y,
-        )
-
-        preferred_moves = [
-            (dx, dy),
-            (dx, 0),
-            (0, dy),
-        ]
-
-        for move_x, move_y in preferred_moves:
-            if move_x == 0 and move_y == 0:
-                continue
-
-            next_x = self.x + move_x
-            next_y = self.y + move_y
-
-            if not self._can_move_to(
-                world,
-                next_x,
-                next_y,
-            ):
-                continue
-
-            self.x = next_x
-            self.y = next_y
+        if self._is_at_target():
             return
 
-        self._wander(world)
+        if not self.path:
+            self.path = world.find_path(
+                self.x,
+                self.y,
+                self.target_x,
+                self.target_y,
+            )
 
-    def _direction_to(self, difference):
-        if difference > 0:
-            return 1
+            if not self.path:
+                self.clear_target()
+                return
 
-        if difference < 0:
-            return -1
+        next_x, next_y = self.path.pop(0)
 
-        return 0
+        if not self._can_move_to(
+            world,
+            next_x,
+            next_y,
+        ):
+            self.path.clear()
+            return
+
+        self.x = next_x
+        self.y = next_y
 
     def _is_at_target(self):
         return (
@@ -297,13 +294,21 @@ class Monkey:
 
         return tile.terrain not in blocked_terrain
 
-    def set_target(self, x, y):
+    def set_target(self, world, x, y):
         self.target_x = x
         self.target_y = y
+
+        self.path = world.find_path(
+            self.x,
+            self.y,
+            x,
+            y,
+        )
 
     def clear_target(self):
         self.target_x = None
         self.target_y = None
+        self.path.clear()
 
     def eat(self, food_amount):
         if food_amount <= 0:
@@ -362,6 +367,7 @@ class Monkey:
                 return
 
             self.set_target(
+                world,
                 target.x,
                 target.y,
             )

@@ -1,4 +1,5 @@
 import random
+import heapq
 
 import opensimplex
 
@@ -557,3 +558,104 @@ class World:
                 visible.append(tree)
 
         return visible
+
+
+    def find_path(
+        self,
+        start_x,
+        start_y,
+        target_x,
+        target_y,
+    ):
+        start = (start_x, start_y)
+        target = (target_x, target_y)
+
+        if start == target:
+            return []
+
+        open_set = []
+        heapq.heappush(open_set, (0, start))
+
+        came_from = {}
+        g_score = {start: 0,}
+
+        visited = set()
+
+        while open_set:
+            _, current = heapq.heappop(open_set)
+
+            if current in visited:
+                continue
+
+            visited.add(current)
+
+            if current == target:
+                return self._reconstruct_path(came_from,current,)
+
+            for neighbour in self._get_path_neighbours(
+                current[0],
+                current[1],
+            ):
+                tentative_g_score = (g_score[current] + 1)
+
+                if tentative_g_score >= g_score.get(neighbour,float("inf"),):
+                    continue
+
+                came_from[neighbour] = current
+                g_score[neighbour] = tentative_g_score
+
+                heuristic = max(
+                    abs(neighbour[0] - target_x),
+                    abs(neighbour[1] - target_y),
+                )
+
+                priority = (tentative_g_score+ heuristic)
+
+                heapq.heappush(open_set, (priority,neighbour,),)
+
+        return []
+
+    def _get_path_neighbours( self, x,y,):
+        neighbours = []
+
+        directions = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ]
+
+        for dx, dy in directions:
+            next_x = x + dx
+            next_y = y + dy
+
+            tile = self.get_tile(next_x,next_y,)
+
+            if tile is None:
+                continue
+
+            if tile.terrain in {
+                "water",
+                "mountain",
+                "snow",
+            }:
+                continue
+
+            neighbours.append((next_x, next_y))
+
+        return neighbours
+
+    def _reconstruct_path(self,came_from,current,):
+        path = [current,]
+
+        while current in came_from:
+            current = came_from[current]
+            path.append(current)
+
+        path.reverse()
+
+        return path[1:]
