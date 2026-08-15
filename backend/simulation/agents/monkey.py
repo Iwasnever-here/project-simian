@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import random
 
 
@@ -27,6 +27,8 @@ MAX_AGE_DAYS = 3650
 SLEEP_ENERGY_RECOVERY = 1.0
 
 VISION_RANGE = 5
+MAX_FOOD_MEMORIES = 4
+FOOD_MEMORY_COOLDOWN_TICKS = 20
 
 MOVEMENT_DIRECTIONS = [
     (1, 0),
@@ -54,7 +56,8 @@ class Monkey:
     starving_ticks: int = 0
     exhausted_ticks: int = 0
     alive: bool = True
-
+    food_memory: list[tuple[int, int]] = field(default_factory=list)
+    food_memory_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
     def update(self, world):
         if not self.alive:
             return
@@ -62,7 +65,9 @@ class Monkey:
         
         self._increase_hunger()
         self._decrease_energy()
+        self._update_food_memory_cooldowns()
         self._update_survival()
+
 
         # If already sleeping, stay asleep until recovered.
         if self.state == SLEEPING_STATE:
@@ -85,6 +90,18 @@ class Monkey:
         self.clear_target()
         self._wander(world)
 
+    def _update_food_memory_cooldowns(self):
+        expired = []
+
+        for location in self.food_memory_cooldowns:
+            self.food_memory_cooldowns[location] -= 1
+
+            if self.food_memory_cooldowns[location] <= 0:
+                expired.append(location)
+
+        for location in expired:
+            del self.food_memory_cooldowns[location]
+
     def _increase_hunger(self):
         self.hunger = min(
             MAX_HUNGER,
@@ -97,14 +114,26 @@ class Monkey:
         if self.target_x is None or self.target_y is None:
             target = self._find_visible_food(world)
 
-            if target is None:
-                self._wander(world)
-                return
+            if target is not None:
+                self.set_target(
+                    target.x,
+                    target.y,
+                )
 
-            self.set_target(
-                target.x,
-                target.y,
-            )
+            else:
+                remembered_location = (
+                    self._find_remembered_food()
+                )
+
+                if remembered_location is not None:
+                    self.set_target(
+                        remembered_location[0],
+                        remembered_location[1],
+                    )
+
+                else:
+                    self._wander(world)
+                    return
 
         if self._is_at_target():
             self._eat_from_target(world)
@@ -118,19 +147,68 @@ class Monkey:
 
         self.state = EATING_STATE
 
+        food_x = self.target_x
+        food_y = self.target_y
+
         harvested = world.harvest_tree_fruit(
-            self.target_x,
-            self.target_y,
+            food_x,
+            food_y,
             1,
         )
 
         if harvested <= 0:
+            location = (
+                food_x,
+                food_y,
+            )
+
+            if location in self.food_memory:
+                self.food_memory_cooldowns[location] = (
+                    FOOD_MEMORY_COOLDOWN_TICKS
+                )
+
             self.clear_target()
             self.state = SEEKING_FOOD_STATE
             return
 
+        self.remember_food_location(
+            food_x,
+            food_y,
+        )
+
         self.eat(
             harvested * FRUIT_HUNGER_REDUCTION,
+        )
+
+    def remember_food_location(self, x, y):
+        location = (x, y)
+
+        # Already remembered.
+        # Move it to the end so it becomes the most recent memory.
+        if location in self.food_memory:
+            self.food_memory.remove(location)
+
+        self.food_memory.append(location)
+
+        # Forget oldest location if memory is full.
+        if len(self.food_memory) > MAX_FOOD_MEMORIES:
+            self.food_memory.pop(0)
+
+    def _find_remembered_food(self):
+        available_memories = [
+            location
+            for location in self.food_memory
+            if location not in self.food_memory_cooldowns
+        ]
+
+        if not available_memories:
+            return None
+
+        return min(
+            available_memories,
+            key=lambda location:
+                abs(location[0] - self.x)
+                + abs(location[1] - self.y),
         )
 
     def _move_toward_target(self, world):
@@ -255,6 +333,13 @@ class Monkey:
             if self.target_x is not None
             and self.target_y is not None
             else None,
+            "food_memory": [
+                {
+                    "x": x,
+                    "y": y,
+                }
+                for x, y in self.food_memory
+            ],
         }
 
     def _decrease_energy(self):
@@ -263,7 +348,6 @@ class Monkey:
             self.energy - ENERGY_PER_TICK,
         )
 
- 
     def _handle_seeking_shelter(self, world):
         self.state = SEEKING_SHELTER_STATE
 
@@ -291,7 +375,6 @@ class Monkey:
     def _start_sleeping(self):
         self.state = SLEEPING_STATE
         self.clear_target()
-
 
     def _sleep(self, world):
         self.energy = min(
