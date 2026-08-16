@@ -17,6 +17,7 @@ world = World(300, 300)
 
 
 async def simulation_loop():
+    
     while True:
         if not simulation_paused:
             await asyncio.to_thread(

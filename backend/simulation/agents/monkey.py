@@ -408,59 +408,10 @@ class Monkey:
             self.alive = False
 
     def _find_visible_food(self, world):
-        print(
-            f"\nMonkey {self.id}: "
-            f"pos=({self.x}, {self.y}), "
-            f"hunger={self.hunger}"
-        )
-
-        current_tree = world.get_tree(
-            self.x,
-            self.y,
-        )
-
-        if current_tree:
-            print(
-                "TREE UNDER MONKEY:",
-                current_tree.species,
-                "fruit:",
-                current_tree.fruit,
-            )
-        else:
-            print("NO TREE UNDER MONKEY")
-
-        nearby_trees = []
-
-        for tree in world.trees.values():
-            distance = max(
-                abs(tree.x - self.x),
-                abs(tree.y - self.y),
-            )
-
-            if distance <= VISION_RANGE:
-                nearby_trees.append(tree)
-
-        print(
-            "ALL NEARBY TREES:",
-            [
-                (
-                    tree.x,
-                    tree.y,
-                    tree.species,
-                    tree.fruit,
-                )
-                for tree in nearby_trees
-            ],
-        )
-
         trees = world.get_visible_fruit_trees(
             self.x,
             self.y,
             VISION_RANGE,
-        )
-
-        print(
-            f"VISIBLE FOOD: {len(trees)}"
         )
 
         if not trees:
@@ -493,7 +444,7 @@ class Monkey:
 
     def calculate_risk(self, world):
         if self.state == SLEEPING_STATE:
-            if world.is_daytime:
+            if world.is_daytime():
                 return DAY_SLEEP_RISK
 
             return NIGHT_SLEEP_RISK
@@ -501,7 +452,7 @@ class Monkey:
         if self.moved_this_tick:
             return MOVING_RISK
 
-        if world.is_daytime:
+        if world.is_daytime():
             return DAY_IDLE_RISK
 
         return NIGHT_IDLE_RISK   

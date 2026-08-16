@@ -1,5 +1,6 @@
 import random
 import heapq
+import threading
 
 import opensimplex
 
@@ -100,6 +101,15 @@ class World:
         self.width = width
         self.height = height
         self.chunk_size = CHUNK_SIZE
+
+        # Guards all shared mutable simulation state (monkeys, trees,
+        # tick/day counters) against concurrent access between the
+        # background simulation loop thread and FastAPI request threads.
+        # RLock (not Lock) because some locked methods call other
+        # locked methods internally from the same thread (e.g. update()
+        # calls into monkey logic which calls back into World methods
+        # that also acquire the lock) - a plain Lock would deadlock.
+        self.lock = threading.RLock()
 
         self.elevation_noise = opensimplex.OpenSimplex(seed=12345)
         self.moisture_noise = opensimplex.OpenSimplex(seed=98765)
@@ -273,27 +283,34 @@ class World:
         )
 
     def _ensure_trees_for_chunk(self, cx, cy):
-        chunk_key = (cx, cy)
+        # Mutates self.trees / self.generated_tree_chunks, which are
+        # read and written from both the simulation-loop thread and
+        # request-handling threads (e.g. via get_chunk /
+        # get_visible_fruit_trees), so this must be locked. Safe to
+        # call from a method that already holds the lock since it's
+        # an RLock.
+        with self.lock:
+            chunk_key = (cx, cy)
 
-        if chunk_key in self.generated_tree_chunks:
-            return
+            if chunk_key in self.generated_tree_chunks:
+                return
 
-        x0 = cx * self.chunk_size
-        y0 = cy * self.chunk_size
-        x1 = min(x0 + self.chunk_size, self.width)
-        y1 = min(y0 + self.chunk_size, self.height)
+            x0 = cx * self.chunk_size
+            y0 = cy * self.chunk_size
+            x1 = min(x0 + self.chunk_size, self.width)
+            y1 = min(y0 + self.chunk_size, self.height)
 
-        for y in range(y0, y1):
-            for x in range(x0, x1):
-                if not self._tree_should_exist(x, y):
-                    continue
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    if not self._tree_should_exist(x, y):
+                        continue
 
-                tree = self._create_tree(x, y)
+                    tree = self._create_tree(x, y)
 
-                if tree is not None:
-                    self.trees[(x, y)] = tree
+                    if tree is not None:
+                        self.trees[(x, y)] = tree
 
-        self.generated_tree_chunks.add(chunk_key)
+            self.generated_tree_chunks.add(chunk_key)
 
     def _build_thumbnail(self, max_dimension=128):
         scale = min(
@@ -328,26 +345,29 @@ class World:
         return None
 
     def get_tree(self, x, y):
-        return self.trees.get((x, y))
+        with self.lock:
+            return self.trees.get((x, y))
 
     def harvest_tree_fruit(self, x, y, amount=1):
-        tree = self.get_tree(x, y)
+        with self.lock:
+            tree = self.get_tree(x, y)
 
-        if tree is None:
-            return 0
+            if tree is None:
+                return 0
 
-        return tree.harvest_fruit(amount)
+            return tree.harvest_fruit(amount)
 
     def meta(self):
-        return {
-            "width": self.width,
-            "height": self.height,
-            "chunkSize": self.chunk_size,
-            "tick": self.tick,
-            "day": self.day,
-            "hour": round(self.get_hour_of_day(),  1),
-            "isDaytime": self.is_daytime(),
-        }
+        with self.lock:
+            return {
+                "width": self.width,
+                "height": self.height,
+                "chunkSize": self.chunk_size,
+                "tick": self.tick,
+                "day": self.day,
+                "hour": round(self.get_hour_of_day(),  1),
+                "isDaytime": self.is_daytime(),
+            }
 
     def get_chunk(self, cx, cy):
         x0 = cx * self.chunk_size
@@ -364,56 +384,57 @@ class World:
         x1 = min(x0 + self.chunk_size, self.width)
         y1 = min(y0 + self.chunk_size, self.height)
 
-        self._ensure_trees_for_chunk(cx, cy)
+        with self.lock:
+            self._ensure_trees_for_chunk(cx, cy)
 
-        chars = []
-        trees = []
+            chars = []
+            trees = []
 
-        for y in range(y0, y1):
-            for x in range(x0, x1):
-                tile = self.grid[x][y]
-                chars.append(TERRAIN_CODE[tile.terrain])
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    tile = self.grid[x][y]
+                    chars.append(TERRAIN_CODE[tile.terrain])
 
-                tree = self.trees.get((x, y))
+                    tree = self.trees.get((x, y))
 
-                if tree is None or not tree.alive:
-                    continue
+                    if tree is None or not tree.alive:
+                        continue
 
-                trees.append({
-                    "x": tree.x - x0,
-                    "y": tree.y - y0,
-                    "species": tree.species,
-                    "fruit": tree.fruit,
-                    "wood": tree.wood,
-                    "alive": tree.alive,
-                })
+                    trees.append({
+                        "x": tree.x - x0,
+                        "y": tree.y - y0,
+                        "species": tree.species,
+                        "fruit": tree.fruit,
+                        "wood": tree.wood,
+                        "alive": tree.alive,
+                    })
 
-        return {
-            "cx": cx,
-            "cy": cy,
-            "w": x1 - x0,
-            "h": y1 - y0,
-            "terrain": "".join(chars),
-            "trees": trees,
-        }
+            return {
+                "cx": cx,
+                "cy": cy,
+                "w": x1 - x0,
+                "h": y1 - y0,
+                "terrain": "".join(chars),
+                "trees": trees,
+            }
 
     def spawn_monkey(self, x, y):
-        tile = self.get_tile(x, y)
-        name, gender = generate_monkey_identity()
-
         if not self.is_walkable(x, y):
             return None
 
-        monkey = Monkey(
-            id=self.next_monkey_id,
-            name = name,
-            gender = gender,
-            x=x,
-            y=y,
-        )
+        name, gender = generate_monkey_identity()
 
-        self.monkeys[monkey.id] = monkey
-        self.next_monkey_id += 1
+        with self.lock:
+            monkey = Monkey(
+                id=self.next_monkey_id,
+                name = name,
+                gender = gender,
+                x=x,
+                y=y,
+            )
+
+            self.monkeys[monkey.id] = monkey
+            self.next_monkey_id += 1
 
         return monkey
 
@@ -435,90 +456,95 @@ class World:
         return None
 
     def get_monkeys(self):
-        return [
-            monkey.to_dict()
-            for monkey in self.monkeys.values()
-        ]
+        with self.lock:
+            return [
+                monkey.to_dict()
+                for monkey in self.monkeys.values()
+            ]
 
     def get_monkey(self, monkey_id):
-        return self.monkeys.get(monkey_id)
+        with self.lock:
+            return self.monkeys.get(monkey_id)
 
     def thumbnail(self):
         return self._thumbnail
 
     def update(self):
-        self.tick += 1
+        with self.lock:
+            self.tick += 1
 
-        if self.tick >= TICKS_PER_DAY:
-            self.tick = 0
-            self.day += 1
+            if self.tick >= TICKS_PER_DAY:
+                self.tick = 0
+                self.day += 1
 
-            self._handle_new_day()
+                self._handle_new_day()
 
-        for monkey in self.monkeys.values():
-            monkey.update(self)
+            for monkey in self.monkeys.values():
+                monkey.update(self)
 
-        dead_ids = [monkey_id for monkey_id, monkey in self.monkeys.items() if not monkey.alive]
+            dead_ids = [monkey_id for monkey_id, monkey in self.monkeys.items() if not monkey.alive]
 
-        for monkey_id in dead_ids:
-            del self.monkeys[monkey_id]
+            for monkey_id in dead_ids:
+                del self.monkeys[monkey_id]
 
-        for tree in self.trees.values():
-            tree.update()
+            for tree in self.trees.values():
+                tree.update()
 
     def find_nearest_fruit_tree(self, x, y):
-    
-        nearest_tree = None
-        nearest_distance = None
-    
-        for tree in self.trees.values():
-            if not tree.alive:
-                continue
-    
-            if tree.fruit <= 0:
-                continue
-    
-            distance = (
-                abs(tree.x - x)
-                + abs(tree.y - y)
-            )
-    
-            if (
-                nearest_distance is None
-                or distance < nearest_distance
-            ):
-                nearest_tree = tree
-                nearest_distance = distance
-    
-        return nearest_tree
+        with self.lock:
+            nearest_tree = None
+            nearest_distance = None
+
+            for tree in self.trees.values():
+                if not tree.alive:
+                    continue
+
+                if tree.fruit <= 0:
+                    continue
+
+                distance = (
+                    abs(tree.x - x)
+                    + abs(tree.y - y)
+                )
+
+                if (
+                    nearest_distance is None
+                    or distance < nearest_distance
+                ):
+                    nearest_tree = tree
+                    nearest_distance = distance
+
+            return nearest_tree
 
     def find_nearest_shelter(self, x, y):
-        nearest_tree = None
-        nearest_distance = None
+        with self.lock:
+            nearest_tree = None
+            nearest_distance = None
 
-        for tree in self.trees.values():
-            if not tree.alive:
-                continue
+            for tree in self.trees.values():
+                if not tree.alive:
+                    continue
 
-            if tree.wood <= 0:
-                continue
+                if tree.wood <= 0:
+                    continue
 
-            distance = (
-                abs(tree.x - x)
-                + abs(tree.y - y)
-            )
+                distance = (
+                    abs(tree.x - x)
+                    + abs(tree.y - y)
+                )
 
-            if (
-                nearest_distance is None
-                or distance < nearest_distance
-            ):
-                nearest_tree = tree
-                nearest_distance = distance
+                if (
+                    nearest_distance is None
+                    or distance < nearest_distance
+                ):
+                    nearest_tree = tree
+                    nearest_distance = distance
 
-        return nearest_tree
+            return nearest_tree
 
     def get_monkey_by_id(self, monkey_id):
-        return self.monkeys.get(monkey_id)
+        with self.lock:
+            return self.monkeys.get(monkey_id)
 
     def _handle_new_day(self):
         for monkey in self.monkeys.values():
@@ -548,28 +574,29 @@ class World:
         min_cy = min_y // self.chunk_size
         max_cy = max_y // self.chunk_size
 
-        for cy in range(min_cy, max_cy + 1):
-            for cx in range(min_cx, max_cx + 1):
-                self._ensure_trees_for_chunk(cx, cy)
+        with self.lock:
+            for cy in range(min_cy, max_cy + 1):
+                for cx in range(min_cx, max_cx + 1):
+                    self._ensure_trees_for_chunk(cx, cy)
 
-        visible = []
+            visible = []
 
-        for tree in self.trees.values():
-            if not tree.alive:
-                continue
+            for tree in self.trees.values():
+                if not tree.alive:
+                    continue
 
-            if tree.fruit <= 0:
-                continue
+                if tree.fruit <= 0:
+                    continue
 
-            distance = max(
-                abs(tree.x - x),
-                abs(tree.y - y),
-            )
+                distance = max(
+                    abs(tree.x - x),
+                    abs(tree.y - y),
+                )
 
-            if distance <= vision_range:
-                visible.append(tree)
+                if distance <= vision_range:
+                    visible.append(tree)
 
-        return visible
+            return visible
 
 
     def find_path(
@@ -651,6 +678,16 @@ class World:
             ):
                 continue
 
+            # For diagonal moves, block if both orthogonal "corner"
+            # tiles are blocked - prevents squeezing diagonally
+            # between two walls/water/mountain tiles.
+            if dx != 0 and dy != 0:
+                if (
+                    not self.is_walkable(x + dx, y)
+                    and not self.is_walkable(x, y + dy)
+                ):
+                    continue
+
             neighbours.append(
                 (next_x, next_y)
             )
@@ -704,4 +741,3 @@ class World:
             return False
 
         return True
-    
