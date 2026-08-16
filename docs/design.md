@@ -16,11 +16,10 @@ tile generation:
 - stayig still isnt safe
 - sleeping at night safer than day
 
+- monkeys should have names and geneders
 
 think about this
 
-
-- monkeys should have names and geneders
 - monkeys can repoduce after so many days
 - monkeys have passable traits (genetics)
 - each monkey has traits (boldness, curiosity, sociability, memory, agression)
@@ -43,3 +42,9 @@ tourists
 - after they have been robbed once the score for everything increases till they leave
 - tourists can have different traits (feed monkeys, chase, ignore, be careful )
 - 
+
+dangers
+- wild animals - spawn certain locations
+- hunt at night
+- better vision in days
+- monkyes should be able to react - hide up trees

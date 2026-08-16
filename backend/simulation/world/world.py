@@ -23,6 +23,11 @@ TERRAIN_CODE = {
 }
 
 
+TEMPLE_X = 235
+TEMPLE_Y = 135
+TEMPLE_WIDTH = 12
+TEMPLE_HEIGHT = 10
+
 # ---------------------------------------------------------------------
 # Island shape
 # ---------------------------------------------------------------------
@@ -117,6 +122,8 @@ class World:
         self.monkeys: dict[int, Monkey] = {}
         self.next_monkey_id = 1
 
+        
+
         for x in range(width):
             for y in range(height):
                 elevation = self._fbm(
@@ -137,6 +144,9 @@ class World:
                 self.grid[x][y] = Tile(x=x, y=y, terrain=terrain)
 
         self._thumbnail = self._build_thumbnail()
+
+        for _ in range(100):
+                    self.spawn_random_monkey()
 
     def _fbm(
         self,
@@ -235,6 +245,9 @@ class World:
         return density > threshold
 
     def _create_tree(self, x, y):
+        if self.is_inside_temple(x, y):
+            return None
+
         species_value = self.tree_species_noise.noise2(
             x * TREE_SPECIES_SCALE,
             y * TREE_SPECIES_SCALE,
@@ -276,7 +289,9 @@ class World:
                     continue
 
                 tree = self._create_tree(x, y)
-                self.trees[(x, y)] = tree
+
+                if tree is not None:
+                    self.trees[(x, y)] = tree
 
         self.generated_tree_chunks.add(chunk_key)
 
@@ -386,14 +401,7 @@ class World:
         tile = self.get_tile(x, y)
         name, gender = generate_monkey_identity()
 
-        if tile is None:
-            return None
-
-        if tile.terrain in {
-            "water",
-            "mountain",
-            "snow",
-        }:
+        if not self.is_walkable(x, y):
             return None
 
         monkey = Monkey(
@@ -619,7 +627,7 @@ class World:
 
         return []
 
-    def _get_path_neighbours( self, x,y,):
+    def _get_path_neighbours(self, x, y):
         neighbours = []
 
         directions = [
@@ -637,19 +645,15 @@ class World:
             next_x = x + dx
             next_y = y + dy
 
-            tile = self.get_tile(next_x,next_y,)
-
-            if tile is None:
+            if not self.is_walkable(
+                next_x,
+                next_y,
+            ):
                 continue
 
-            if tile.terrain in {
-                "water",
-                "mountain",
-                "snow",
-            }:
-                continue
-
-            neighbours.append((next_x, next_y))
+            neighbours.append(
+                (next_x, next_y)
+            )
 
         return neighbours
 
@@ -663,3 +667,41 @@ class World:
         path.reverse()
 
         return path[1:]
+
+    def is_inside_temple(self, x: int, y: int) -> bool:
+        return (
+            TEMPLE_X <= x < TEMPLE_X + TEMPLE_WIDTH
+            and TEMPLE_Y <= y < TEMPLE_Y + TEMPLE_HEIGHT
+        )
+
+    def get_temple(self):
+        return {
+            "x": TEMPLE_X,
+            "y": TEMPLE_Y,
+            "width": TEMPLE_WIDTH,
+            "height": TEMPLE_HEIGHT,
+            "entrance": {
+                "x": TEMPLE_X + TEMPLE_WIDTH // 2,
+                "y": TEMPLE_Y + TEMPLE_HEIGHT - 1,
+            },
+        }
+
+
+    def is_walkable(self, x: int, y: int) -> bool:
+        tile = self.get_tile(x, y)
+
+        if tile is None:
+            return False
+
+        if self.is_inside_temple(x, y):
+            return False
+
+        if tile.terrain in {
+            "water",
+            "mountain",
+            "snow",
+        }:
+            return False
+
+        return True
+    

@@ -290,20 +290,6 @@ class Monkey:
             if self.move(world, next_x, next_y):
                 return
 
-    def _can_move_to(self, world, x, y):
-        tile = world.get_tile(x, y)
-
-        if tile is None:
-            return False
-
-        blocked_terrain = {
-            "water",
-            "mountain",
-            "snow",
-        }
-
-        return tile.terrain not in blocked_terrain
-
     def set_target(self, world, x, y):
         self.target_x = x
         self.target_y = y
@@ -494,7 +480,7 @@ class Monkey:
         )
 
     def move(self, world, x, y):
-        if not self._can_move_to(world, x, y):
+        if not world.is_walkable(x, y):
             return False
 
         self.x = x
@@ -503,7 +489,7 @@ class Monkey:
         self.moved_this_tick = True
         self.use_movement_energy()
 
-        return True  
+        return True
 
     def calculate_risk(self, world):
         if self.state == SLEEPING_STATE:

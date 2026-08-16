@@ -37,6 +37,17 @@ type TreeData = {
   species: string
 }
 
+type TempleData = {
+  x: number
+  y: number
+  width: number
+  height: number
+  entrance: {
+    x: number
+    y: number
+  }
+}
+
 type MonkeyData = {
   id: number
   x: number
@@ -47,6 +58,8 @@ type MonkeyData = {
   state: string
   target: { x: number; y: number } | null
 }
+
+
 
 type ChunkResponse = {
   cx: number
@@ -79,11 +92,11 @@ const ZOOM_SPEED = 0.0015
 
 
 const TERRAIN_COLOR: Record<string, [number, number, number]> = {
-  w: [30, 144, 255],
+  w: [100,149,237], 
   s: [245, 222, 179],
-  g: [124, 168, 78],
-  f: [34, 92, 45],
-  m: [90, 110, 70],
+  g: [110,139,61],
+  f: [74,93,35],
+  m: [85,93,80],
   r: [120, 110, 100],
   n: [240, 245, 250],
 }
@@ -108,7 +121,8 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
   const [dragging, setDragging] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
-  
+  const [temple, setTemple] = useState<TempleData | null>(null)
+
   const [, bumpVersion] = useState(0)
   const nightAlpha = getNightAlpha(hour)
 
@@ -204,6 +218,21 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
     [apiBase, forceRender],
   )
 
+  const loadTemple = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/temple`)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data: TempleData = await response.json()
+      setTemple(data)
+    } catch (error) {
+      console.error('Temple fetch failed:', error)
+    }
+  }, [apiBase])
+
   const loadMonkeys = useCallback(async () => {
     try {
       const response = await fetch(`${apiBase}/monkeys`)
@@ -229,7 +258,9 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
     }
   }, [loadMonkeys])
 
-  
+  useEffect(() => {
+    loadTemple()
+  }, [loadTemple])
 
   const updateVisibleChunks = useCallback(() => {
     const { x: cameraX, y: cameraY, zoom: cameraZoom } = cameraRef.current
@@ -387,7 +418,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
         style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT, }}
         onWheel={handleWheel}
       >
-        <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x1e90ff}>
+        <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x6495ED}>
           <pixiContainer ref={containerRef}>
             {loadedChunks.map(([key, chunk]) => {
               const [cx, cy] = key.split(':').map(Number)
@@ -418,6 +449,162 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
                 </pixiContainer>
               )
             })}
+            {temple && (
+              <pixiGraphics
+                draw={(graphics) => {
+                  graphics.clear()
+
+                  const x = temple.x * TILE_SIZE
+                  const y = temple.y * TILE_SIZE
+
+                  const width = temple.width * TILE_SIZE
+                  const height = temple.height * TILE_SIZE
+
+                  const wallThickness = TILE_SIZE * 1.5
+                  const towerRadius = TILE_SIZE * 1.8
+
+                  const entranceWidth = TILE_SIZE * 2
+
+                  // Outer platform
+                  graphics
+                    .rect(
+                      x - TILE_SIZE,
+                      y - TILE_SIZE,
+                      width + TILE_SIZE * 2,
+                      height + TILE_SIZE * 2,
+                    )
+                    .fill(0x9f9270)
+
+                  // Main temple floor
+                  graphics
+                    .rect(
+                      x,
+                      y,
+                      width,
+                      height,
+                    )
+                    .fill(0xc2b280)
+
+                  // Inner courtyard
+                  graphics
+                    .rect(
+                      x + wallThickness,
+                      y + wallThickness,
+                      width - wallThickness * 2,
+                      height - wallThickness * 2,
+                    )
+                    .fill(0xd6c69c)
+
+                  // Top wall
+                  graphics
+                    .rect(
+                      x,
+                      y,
+                      width,
+                      wallThickness,
+                    )
+                    .fill(0x6b6045)
+
+                  // Left wall
+                  graphics
+                    .rect(
+                      x,
+                      y,
+                      wallThickness,
+                      height,
+                    )
+                    .fill(0x6b6045)
+
+                  // Right wall
+                  graphics
+                    .rect(
+                      x + width - wallThickness,
+                      y,
+                      wallThickness,
+                      height,
+                    )
+                    .fill(0x6b6045)
+
+                  // Bottom wall left section
+                  graphics
+                    .rect(
+                      x,
+                      y + height - wallThickness,
+                      width / 2 - entranceWidth / 2,
+                      wallThickness,
+                    )
+                    .fill(0x6b6045)
+
+                  // Bottom wall right section
+                  graphics
+                    .rect(
+                      x + width / 2 + entranceWidth / 2,
+                      y + height - wallThickness,
+                      width / 2 - entranceWidth / 2,
+                      wallThickness,
+                    )
+                    .fill(0x6b6045)
+
+                  // Corner towers
+                  graphics
+                    .circle(
+                      x,
+                      y,
+                      towerRadius,
+                    )
+                    .fill(0x786b4d)
+
+                  graphics
+                    .circle(
+                      x + width,
+                      y,
+                      towerRadius,
+                    )
+                    .fill(0x786b4d)
+
+                  graphics
+                    .circle(
+                      x,
+                      y + height,
+                      towerRadius,
+                    )
+                    .fill(0x786b4d)
+
+                  graphics
+                    .circle(
+                      x + width,
+                      y + height,
+                      towerRadius,
+                    )
+                    .fill(0x786b4d)
+
+                  // Entrance
+                  const entranceX =
+                    temple.entrance.x * TILE_SIZE
+
+                  const entranceY =
+                    temple.entrance.y * TILE_SIZE
+
+                  graphics
+                    .rect(
+                      entranceX - TILE_SIZE / 2,
+                      entranceY,
+                      entranceWidth,
+                      TILE_SIZE,
+                    )
+                    .fill(0x3b2a1f)
+
+                  // Central shrine
+                  graphics
+                    .circle(
+                      x + width / 2,
+                      y + height / 2,
+                      TILE_SIZE * 0.8,
+                    )
+                    .fill(0x8f7d52)
+                }}
+              />
+            )}
 
             <pixiGraphics
               draw={(graphics) => {

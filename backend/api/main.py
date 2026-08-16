@@ -19,10 +19,14 @@ world = World(300, 300)
 async def simulation_loop():
     while True:
         if not simulation_paused:
-            world.update()
+            await asyncio.to_thread(
+                world.update,
+            )
 
-        await asyncio.sleep(SIMULATION_TICK_SECONDS / simulation_speed) 
-
+        await asyncio.sleep(
+            SIMULATION_TICK_SECONDS
+            / simulation_speed
+        )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,6 +73,9 @@ def root():
 def get_world_meta():
     return world.meta()
 
+@app.get("/temple")
+def get_temple():
+    return world.get_temple()
 
 @app.get("/world/chunk/{cx}/{cy}")
 def get_world_chunk(

@@ -28,11 +28,11 @@ type MinimapProps = {
 const MINIMAP_SIZE = 160 // px, fits the longer world dimension
 
 const TERRAIN_COLOR: Record<string, [number, number, number]> = {
-  w: [30, 144, 255],
+  w: [100,149,237], 
   s: [245, 222, 179],
-  g: [124, 168, 78],
-  f: [34, 92, 45],
-  m: [90, 110, 70],
+  g: [110,139,61],
+  f: [74,93,35],
+  m: [85,93,80],
   r: [120, 110, 100],
   n: [240, 245, 250],
 }

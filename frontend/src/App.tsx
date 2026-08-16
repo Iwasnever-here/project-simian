@@ -45,6 +45,7 @@ function App() {
   const [viewport, setViewport] = useState<Viewport | null>(null)
   const [monkeyCount, setMonkeyCount] = useState<number | null>(null)
   const [spawning, setSpawning] = useState(false)
+  const [totalMonkeys, setTotalMonkeys] = useState<number | null>(null)
 
 const [paused, setPaused] = useState<boolean | null>(null)
 const [simulationSpeed, setSimulationSpeed] = useState<number | null>(null)
@@ -98,20 +99,42 @@ const formatTime = (hour: number) => {
   }, [])
 
   useEffect(() => {
-    fetch(`${API_BASE}/monkeys`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
+    const fetchMonkeyCount = () => {
+      fetch(`${API_BASE}/monkeys`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
 
-        return response.json()
-      })
-      .then((monkeys: unknown[]) => {
-        setMonkeyCount(monkeys.length)
-      })
-      .catch((error) => {
-        console.error('Monkey list fetch failed:', error)
-      })
+          return response.json()
+        })
+        .then((monkeys: Monkey[]) => {
+          setMonkeyCount(monkeys.length)
+
+          setTotalMonkeys((current) =>
+            current === null
+              ? monkeys.length
+              : current
+          )
+        })
+        .catch((error) => {
+          console.error(
+            'Monkey list fetch failed:',
+            error,
+          )
+        })
+    }
+
+    fetchMonkeyCount()
+
+    const interval = window.setInterval(
+      fetchMonkeyCount,
+      1000,
+    )
+
+    return () => {
+      window.clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -187,7 +210,7 @@ useEffect(() => {
         return response.json()
       })
       .then(() => {
-        setMonkeyCount((count) => (count ?? 0) + 1)
+        setTotalMonkeys((count) => (count ?? 0) + 1)
       })
       .catch((error) => {
         console.error('Spawn monkey failed:', error)
@@ -259,6 +282,7 @@ useEffect(() => {
 
   return (
   <div
+  className="bg-(--background)"
     style={{
       minHeight: '100vh',
       display: 'flex',
@@ -268,16 +292,18 @@ useEffect(() => {
   >
     {/* Top bar */}
     <div
-      style={{
-        width: 'min(1400px, 95vw)',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
-        alignItems: 'center',
-        padding: '16px 0',
-      }}
+      className="
+        w-screen
+        grid
+        grid-cols-[1fr_auto_1fr]
+        items-center
+        p-4
+        px-10
+
+      "
     >
       {/* Left - world time */}
-      <div style={{display: 'flex', justifyContent: 'flex-start',}}>
+      <div className="flex justify-start text-2xl">
         {worldMeta && (
           <span
             style={{
@@ -306,17 +332,15 @@ useEffect(() => {
         }}
       >
         <button
+          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
           onClick={handleSpawnMonkey}
           disabled={spawning}
         >
           {spawning ? 'Spawning...' : 'Spawn Monkey'}
         </button>
 
-        <span>
-          Monkeys: {monkeyCount ?? '...'}
-        </span>
-
         <button
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
           onClick={handlePauseToggle}
           disabled={paused === null}
         >
@@ -329,6 +353,7 @@ useEffect(() => {
 
         {[0.5, 1, 2, 4].map((speed) => (
           <button
+            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
             key={speed}
             onClick={() => handleSpeedChange(speed)}
             disabled={
@@ -353,7 +378,30 @@ useEffect(() => {
         }}
       >
         {/* Empty left column keeps map centred */}
-        <div />
+        <div className="h-[600px] border border-white p-4 rounded-lg">
+          <h3 className="text-xl font-semibold mb-4">
+            Population
+          </h3>
+
+          <div className="flex flex-col gap-2">
+            <div>
+              Alive: {monkeyCount ?? '...'}
+            </div>
+
+            <div>
+              Deaths:{' '}
+              {monkeyCount !== null && totalMonkeys !== null
+                ? totalMonkeys - monkeyCount
+                : '...'}
+            </div>
+
+            <div>
+              Total: {totalMonkeys ?? '...'}
+            </div>
+          </div>
+        </div>
+        
+
 
         {/* World */}
         <div
@@ -381,20 +429,13 @@ useEffect(() => {
         {/* Monkey information */}
         <div>
           {selectedMonkey && (
-            <div
-              style={{
-                padding: 16,
-                width: 220,
-                border: '1px solid #cccccc',
-                borderRadius: 8,
-              }}
-            >
+            <div className="h-[600px] border border-white p-4 rounded-lg ">
               <h3
                 style={{
                   marginTop: 0,
                 }}
               >
-                Monkey 0{selectedMonkey.id}
+                0{selectedMonkey.id}
               </h3>
 
               <div>
@@ -427,9 +468,7 @@ useEffect(() => {
 
               <button
                 onClick={() => setSelectedMonkeyId(null)}
-                style={{
-                  marginTop: 12,
-                }}
+                className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 "
               >
                 Close
               </button>
