@@ -16,7 +16,7 @@ MAX_HUNGER = 100.0
 
 FRUIT_HUNGER_REDUCTION = 25.0
 
-ENERGY_PER_TICK = 0.1
+
 SLEEP_ENERGY_THRESHOLD = 30.0
 WAKE_ENERGY_THRESHOLD = 80.0
 MAX_ENERGY = 100.0
@@ -30,6 +30,17 @@ SLEEP_ENERGY_RECOVERY = 1.0
 VISION_RANGE = 5
 MAX_FOOD_MEMORIES = 4
 FOOD_MEMORY_COOLDOWN_TICKS = 20
+
+MOVEMENT_COST = 0.25
+IDLE_COST = 0.05
+DAY_SLEEP_RISK = 0.005
+NIGHT_SLEEP_RISK = 0.0005
+DAY_IDLE_RISK = 0.001
+NIGHT_IDLE_RISK = 0.0005
+MOVING_RISK = 0.0003
+RISK_ENERGY_COST = 5.0
+
+
 
 MOVEMENT_DIRECTIONS = [
     (1, 0),
@@ -60,39 +71,48 @@ class Monkey:
     food_memory: list[tuple[int, int]] = field(default_factory=list)
     food_memory_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
     path: list[tuple[int, int]] = field(default_factory=list)
+    moved_this_tick: bool = False
 
 
     def update(self, world):
         if not self.alive:
             return
 
-        
+        self.moved_this_tick = False
+
         self._increase_hunger()
-        self._decrease_energy()
         self._update_food_memory_cooldowns()
-        self._update_survival()
 
-
-        # If already sleeping, stay asleep until recovered.
         if self.state == SLEEPING_STATE:
             self._sleep(world)
-            return
-        # Food currently has higher priority than sleep.
-        if self.hunger >= FOOD_SEEK_THRESHOLD:
-            self._handle_food_seeking(world)
-            return
 
-        # Low energy means find somewhere to sleep.
-        if (
-            self.energy <= SLEEP_ENERGY_THRESHOLD
-            or self.state == SEEKING_SHELTER_STATE
-        ):
-            self._handle_seeking_shelter(world)
-            return
+        else:
+            self.update_awake_energy()
 
-        self.state = WANDER_STATE
-        self.clear_target()
-        self._wander(world)
+            # Food currently has higher priority than sleep.
+            if self.hunger >= FOOD_SEEK_THRESHOLD:
+                self._handle_food_seeking(world)
+
+            # Low energy means find somewhere to sleep.
+            elif (
+                self.energy <= SLEEP_ENERGY_THRESHOLD
+                or self.state == SEEKING_SHELTER_STATE
+            ):
+                self._handle_seeking_shelter(world)
+
+            else:
+                self.state = WANDER_STATE
+                self.clear_target()
+                self._wander(world)
+
+        self.apply_environmental_risk(world)
+        self._update_survival()
+
+    def update_awake_energy(self):
+        self.energy = max(
+            0.0,
+            self.energy - IDLE_COST
+        )
 
     def _update_food_memory_cooldowns(self):
         expired = []
@@ -244,16 +264,12 @@ class Monkey:
 
         next_x, next_y = self.path.pop(0)
 
-        if not self._can_move_to(
+        if not self.move(
             world,
             next_x,
             next_y,
         ):
             self.path.clear()
-            return
-
-        self.x = next_x
-        self.y = next_y
 
     def _is_at_target(self):
         return (
@@ -269,16 +285,8 @@ class Monkey:
             next_x = self.x + dx
             next_y = self.y + dy
 
-            if not self._can_move_to(
-                world,
-                next_x,
-                next_y,
-            ):
-                continue
-
-            self.x = next_x
-            self.y = next_y
-            return
+            if self.move(world, next_x, next_y):
+                return
 
     def _can_move_to(self, world, x, y):
         tile = world.get_tile(x, y)
@@ -347,11 +355,7 @@ class Monkey:
             ],
         }
 
-    def _decrease_energy(self):
-        self.energy = max(
-            0.0,
-            self.energy - ENERGY_PER_TICK,
-        )
+
 
     def _handle_seeking_shelter(self, world):
         self.state = SEEKING_SHELTER_STATE
@@ -478,3 +482,47 @@ class Monkey:
                 abs(tree.x - self.x)
                 + abs(tree.y - self.y),
         )
+
+    def use_movement_energy(self):
+        self.energy = max(
+            0.0,
+            self.energy - MOVEMENT_COST,
+        )
+
+    def move(self, world, x, y):
+        if not self._can_move_to(world, x, y):
+            return False
+
+        self.x = x
+        self.y = y
+
+        self.moved_this_tick = True
+        self.use_movement_energy()
+
+        return True  
+
+    def calculate_risk(self, world):
+        if self.state == SLEEPING_STATE:
+            if world.is_daytime:
+                return DAY_SLEEP_RISK
+
+            return NIGHT_SLEEP_RISK
+
+        if self.moved_this_tick:
+            return MOVING_RISK
+
+        if world.is_daytime:
+            return DAY_IDLE_RISK
+
+        return NIGHT_IDLE_RISK   
+
+    def apply_environmental_risk(self, world):
+        risk = self.calculate_risk(world)
+
+        if random.random() < risk:
+            self.energy = max(
+                0.0,
+                self.energy - RISK_ENERGY_COST 
+            )
+
+    

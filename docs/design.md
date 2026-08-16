@@ -12,11 +12,13 @@ tile generation:
 - this fruit monkeys can eat
 - A* search to find food from memory 
 
-
-think about this
 - moving is more energy use
 - stayig still isnt safe
 - sleeping at night safer than day
+
+
+think about this
+
 
 - monkeys should have names and geneders
 - monkeys can repoduce after so many days
