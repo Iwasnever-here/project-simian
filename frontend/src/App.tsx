@@ -29,6 +29,8 @@ type Monkey = {
   y: number
   hunger: number
   age: number
+  name: string
+  gender: string
   energy: number
   state: string
 }
@@ -394,6 +396,14 @@ useEffect(() => {
               >
                 Monkey 0{selectedMonkey.id}
               </h3>
+
+              <div>
+                Name: {selectedMonkey.name}
+              </div>
+
+              <div>
+                Gender: {selectedMonkey.gender}
+              </div>
 
               <div>
                 Age: {selectedMonkey.age} days

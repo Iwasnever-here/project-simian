@@ -59,6 +59,8 @@ class Monkey:
     id: int
     x: int
     y: int
+    gender: str
+    name: str
     hunger: float = 0.0
     age: int = 0
     energy: float = 100.0
@@ -337,8 +339,10 @@ class Monkey:
             "y": self.y,
             "hunger": round(self.hunger, 1),
             "age": self.age,
+            "name": self.name,
             "energy": round(self.energy, 1),
             "state": self.state,
+            "gender": self.gender,
             "target": {
                 "x": self.target_x,
                 "y": self.target_y,

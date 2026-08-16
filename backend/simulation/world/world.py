@@ -3,6 +3,7 @@ import heapq
 
 import opensimplex
 
+from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
 from backend.simulation.agents.monkey import Monkey
@@ -383,6 +384,7 @@ class World:
 
     def spawn_monkey(self, x, y):
         tile = self.get_tile(x, y)
+        name, gender = generate_monkey_identity()
 
         if tile is None:
             return None
@@ -396,6 +398,8 @@ class World:
 
         monkey = Monkey(
             id=self.next_monkey_id,
+            name = name,
+            gender = gender,
             x=x,
             y=y,
         )
