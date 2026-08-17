@@ -2,7 +2,9 @@ from dataclasses import dataclass, field
 import random
 
 
-
+# ---------------------------------------------------------------------
+# Monkey states
+# ---------------------------------------------------------------------
 
 WANDER_STATE = "wandering"
 SEEKING_FOOD_STATE = "seeking_food"
@@ -10,29 +12,42 @@ EATING_STATE = "eating"
 SLEEPING_STATE = "sleeping"
 SEEKING_SHELTER_STATE = "seeking_shelter"
 
+
+# ---------------------------------------------------------------------
+# Hunger and food
+# ---------------------------------------------------------------------
+
 HUNGER_PER_TICK = 0.5
 FOOD_SEEK_THRESHOLD = 60.0
 MAX_HUNGER = 100.0
 
 FRUIT_HUNGER_REDUCTION = 25.0
 
+MAX_FOOD_MEMORIES = 4
+FOOD_MEMORY_COOLDOWN_TICKS = 20
+
+
+# ---------------------------------------------------------------------
+# Energy and sleep
+# ---------------------------------------------------------------------
 
 SLEEP_ENERGY_THRESHOLD = 30.0
 WAKE_ENERGY_THRESHOLD = 80.0
 MAX_ENERGY = 100.0
+SLEEP_ENERGY_RECOVERY = 1.0
+
+MOVEMENT_COST = 0.25
+IDLE_COST = 0.05
+
+
+# ---------------------------------------------------------------------
+# Survival and risk
+# ---------------------------------------------------------------------
 
 MAX_STARVING_TICK = 10
 MAX_EXHAUSTED_TICK = 10
 MAX_AGE_DAYS = 3650
 
-SLEEP_ENERGY_RECOVERY = 1.0
-
-VISION_RANGE = 5
-MAX_FOOD_MEMORIES = 4
-FOOD_MEMORY_COOLDOWN_TICKS = 20
-
-MOVEMENT_COST = 0.25
-IDLE_COST = 0.05
 DAY_SLEEP_RISK = 0.005
 NIGHT_SLEEP_RISK = 0.0005
 DAY_IDLE_RISK = 0.001
@@ -44,20 +59,38 @@ MAX_HEALTH = 100.0
 STARVATION_DAMAGE = 2.0
 EXHAUST_DAMAGE = 1.0
 
+
+# ---------------------------------------------------------------------
+# Life stages
+# ---------------------------------------------------------------------
+
 INFANT_MAX_AGE = 50
 JUVENILE_MAX_AGE = 100
 ELDERLY_MIN_AGE = 300
 
+
+# ---------------------------------------------------------------------
+# Traits
+# ---------------------------------------------------------------------
+
 MIN_TRAIT_VALUE = 0.0
 MAX_TRAIT_VALUE = 1.0
 
-def random_trait() -> float:
-        value = random.gauss(0.5, 0.15)
-        return max(
-            MIN_TRAIT_VALUE,
-            min(MAX_TRAIT_VALUE, value),
-        )
 
+def random_trait() -> float:
+    value = random.gauss(0.5, 0.15)
+
+    return max(
+        MIN_TRAIT_VALUE,
+        min(MAX_TRAIT_VALUE, value),
+    )
+
+
+# ---------------------------------------------------------------------
+# Vision and movement
+# ---------------------------------------------------------------------
+
+VISION_RANGE = 5
 
 MOVEMENT_DIRECTIONS = [
     (1, 0),
@@ -78,28 +111,41 @@ class Monkey:
     y: int
     gender: str
     name: str
+
+    # Core survival stats
     hunger: float = 0.0
     age: int = 0
     health: float = MAX_HEALTH
     energy: float = 100.0
     state: str = WANDER_STATE
+
+    # Genetic traits
     boldness: float = 0.5
     curiosity: float = 0.5
     sociability: float = 0.5
     memory: float = 0.5
     aggression: float = 0.5
 
+    # Target and survival tracking
     target_x: int | None = None
     target_y: int | None = None
     starving_ticks: int = 0
     exhausted_ticks: int = 0
     alive: bool = True
+
+    # Memory and pathfinding
     food_memory: list[tuple[int, int]] = field(default_factory=list)
-    food_memory_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
+    food_memory_cooldowns: dict[tuple[int, int], int] = field(
+        default_factory=dict
+    )
     path: list[tuple[int, int]] = field(default_factory=list)
+
+    # Per-tick movement state
     moved_this_tick: bool = False
 
-
+    # -----------------------------------------------------------------
+    # Main update
+    # -----------------------------------------------------------------
 
     def update(self, world):
         if not self.alive:
@@ -135,23 +181,9 @@ class Monkey:
         self.apply_environmental_risk(world)
         self._update_survival()
 
-    def update_awake_energy(self):
-        self.energy = max(
-            0.0,
-            self.energy - IDLE_COST
-        )
-
-    def _update_food_memory_cooldowns(self):
-        expired = []
-
-        for location in self.food_memory_cooldowns:
-            self.food_memory_cooldowns[location] -= 1
-
-            if self.food_memory_cooldowns[location] <= 0:
-                expired.append(location)
-
-        for location in expired:
-            del self.food_memory_cooldowns[location]
+    # -----------------------------------------------------------------
+    # Hunger and food seeking
+    # -----------------------------------------------------------------
 
     def _increase_hunger(self):
         self.hunger = min(
@@ -173,9 +205,7 @@ class Monkey:
                 )
 
             else:
-                remembered_location = (
-                    self._find_remembered_food()
-                )
+                remembered_location = self._find_remembered_food()
 
                 if remembered_location is not None:
                     self.set_target(
@@ -193,6 +223,23 @@ class Monkey:
             return
 
         self._move_toward_target(world)
+
+    def _find_visible_food(self, world):
+        trees = world.get_visible_fruit_trees(
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+
+        if not trees:
+            return None
+
+        return min(
+            trees,
+            key=lambda tree:
+                abs(tree.x - self.x)
+                + abs(tree.y - self.y),
+        )
 
     def _eat_from_target(self, world):
         if self.target_x is None or self.target_y is None:
@@ -233,6 +280,22 @@ class Monkey:
             harvested * FRUIT_HUNGER_REDUCTION,
         )
 
+    def eat(self, food_amount):
+        if food_amount <= 0:
+            return
+
+        self.hunger = max(
+            0.0,
+            self.hunger - food_amount,
+        )
+
+        self.state = WANDER_STATE
+        self.clear_target()
+
+    # -----------------------------------------------------------------
+    # Food memory
+    # -----------------------------------------------------------------
+
     def remember_food_location(self, x, y):
         location = (x, y)
 
@@ -263,6 +326,22 @@ class Monkey:
                 abs(location[0] - self.x)
                 + abs(location[1] - self.y),
         )
+
+    def _update_food_memory_cooldowns(self):
+        expired = []
+
+        for location in self.food_memory_cooldowns:
+            self.food_memory_cooldowns[location] -= 1
+
+            if self.food_memory_cooldowns[location] <= 0:
+                expired.append(location)
+
+        for location in expired:
+            del self.food_memory_cooldowns[location]
+
+    # -----------------------------------------------------------------
+    # Movement and targeting
+    # -----------------------------------------------------------------
 
     def _move_toward_target(
         self,
@@ -331,59 +410,33 @@ class Monkey:
         self.target_y = None
         self.path.clear()
 
-    def eat(self, food_amount):
-        if food_amount <= 0:
-            return
+    def move(self, world, x, y):
+        if not world.is_walkable(x, y):
+            return False
 
-        self.hunger = max(
+        self.x = x
+        self.y = y
+
+        self.moved_this_tick = True
+        self.use_movement_energy()
+
+        return True
+
+    # -----------------------------------------------------------------
+    # Energy and sleep
+    # -----------------------------------------------------------------
+
+    def update_awake_energy(self):
+        self.energy = max(
             0.0,
-            self.hunger - food_amount,
+            self.energy - IDLE_COST,
         )
 
-        self.state = WANDER_STATE
-        self.clear_target()
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "x": self.x,
-            "y": self.y,
-            "hunger": round(self.hunger, 1),
-            "age": self.age,
-            "life_stage": self.get_life_stage(),
-            "health": round(self.health, 1),
-            "name": self.name,
-            "energy": round(self.energy, 1),
-            "state": self.state,
-            "gender": self.gender,
-            "traits": {
-            "boldness": round(self.boldness, 2),
-            "curiosity": round(self.curiosity, 2),
-            "sociability": round(self.sociability, 2),
-            "memory": round(self.memory, 2),
-            "aggression": round(self.aggression, 2),
-            "effective_memory": round(
-                self.get_effective_memory(),
-                2,
-            ),
-        },
-            "target": {
-                "x": self.target_x,
-                "y": self.target_y,
-            }
-            if self.target_x is not None
-            and self.target_y is not None
-            else None,
-            "food_memory": [
-                {
-                    "x": x,
-                    "y": y,
-                }
-                for x, y in self.food_memory
-            ],
-        }
-
-
+    def use_movement_energy(self):
+        self.energy = max(
+            0.0,
+            self.energy - MOVEMENT_COST,
+        )
 
     def _handle_seeking_shelter(self, world):
         self.state = SEEKING_SHELTER_STATE
@@ -423,63 +476,9 @@ class Monkey:
         if self.energy >= WAKE_ENERGY_THRESHOLD:
             self.state = WANDER_STATE
 
-    def _update_survival(self):
-        if self.hunger >= MAX_HUNGER:
-            self.starving_ticks += 1
-        else:
-            self.starving_ticks = 0
-
-        if self.energy <= 0:
-            self.exhausted_ticks += 1
-        else:
-            self.exhausted_ticks = 0
-
-        if self.starving_ticks >= MAX_STARVING_TICK:
-            self.take_damage(STARVATION_DAMAGE)
-            #self.alive = False
-            return
-
-        if self.exhausted_ticks >= MAX_EXHAUSTED_TICK:
-            self.take_damage(EXHAUST_DAMAGE)
-            return
-
-        if self.age >= MAX_AGE_DAYS:
-            self.die()
-
-    def _find_visible_food(self, world):
-        trees = world.get_visible_fruit_trees(
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-
-        if not trees:
-            return None
-
-        return min(
-            trees,
-            key=lambda tree:
-                abs(tree.x - self.x)
-                + abs(tree.y - self.y),
-        )
-
-    def use_movement_energy(self):
-        self.energy = max(
-            0.0,
-            self.energy - MOVEMENT_COST,
-        )
-
-    def move(self, world, x, y):
-        if not world.is_walkable(x, y):
-            return False
-
-        self.x = x
-        self.y = y
-
-        self.moved_this_tick = True
-        self.use_movement_energy()
-
-        return True
+    # -----------------------------------------------------------------
+    # Environmental risk
+    # -----------------------------------------------------------------
 
     def calculate_risk(self, world):
         if self.state == SLEEPING_STATE:
@@ -494,7 +493,7 @@ class Monkey:
         if world.is_daytime():
             return DAY_IDLE_RISK
 
-        return NIGHT_IDLE_RISK   
+        return NIGHT_IDLE_RISK
 
     def apply_environmental_risk(self, world):
         risk = self.calculate_risk(world)
@@ -502,17 +501,51 @@ class Monkey:
         if random.random() < risk:
             self.energy = max(
                 0.0,
-                self.energy - RISK_ENERGY_COST 
+                self.energy - RISK_ENERGY_COST,
             )
 
-    def take_damage(self, amount: float, apply_vulnerability: bool = True):
+    # -----------------------------------------------------------------
+    # Health and survival
+    # -----------------------------------------------------------------
+
+    def _update_survival(self):
+        if self.hunger >= MAX_HUNGER:
+            self.starving_ticks += 1
+        else:
+            self.starving_ticks = 0
+
+        if self.energy <= 0:
+            self.exhausted_ticks += 1
+        else:
+            self.exhausted_ticks = 0
+
+        if self.starving_ticks >= MAX_STARVING_TICK:
+            self.take_damage(STARVATION_DAMAGE)
+            # self.alive = False
+            return
+
+        if self.exhausted_ticks >= MAX_EXHAUSTED_TICK:
+            self.take_damage(EXHAUST_DAMAGE)
+            return
+
+        if self.age >= MAX_AGE_DAYS:
+            self.die()
+
+    def take_damage(
+        self,
+        amount: float,
+        apply_vulnerability: bool = True,
+    ):
         if amount <= 0:
             return
 
         if apply_vulnerability:
             amount *= self.get_vulnerability_mod()
-        
-        self.health = max(0.0, self.health - amount)
+
+        self.health = max(
+            0.0,
+            self.health - amount,
+        )
 
         if self.health <= 0:
             self.die()
@@ -520,7 +553,11 @@ class Monkey:
     def heal(self, amount: float):
         if amount <= 0:
             return
-        self.health = min(MAX_HEALTH, self.health + amount)
+
+        self.health = min(
+            MAX_HEALTH,
+            self.health + amount,
+        )
 
     def is_dead(self):
         return self.health <= 0
@@ -530,52 +567,99 @@ class Monkey:
         self.alive = False
         self.clear_target()
 
+    # -----------------------------------------------------------------
+    # Life stages and maturity
+    # -----------------------------------------------------------------
+
     def get_life_stage(self) -> str:
         if self.age < INFANT_MAX_AGE:
-            return 'infant'
+            return "infant"
+
         if self.age < JUVENILE_MAX_AGE:
-            return 'juvenile'
+            return "juvenile"
+
         if self.age < ELDERLY_MIN_AGE:
-            return 'adult'
-        return 'elderly'
+            return "adult"
+
+        return "elderly"
 
     def get_vulnerability_mod(self) -> float:
         stage = self.get_life_stage()
 
-        if stage == 'infant':
+        if stage == "infant":
             return 1.5
 
-        if stage == 'juvenile':
+        if stage == "juvenile":
             return 1.2
-        
-        if stage == 'adult':
+
+        if stage == "adult":
             return 1.0
 
-        if stage == 'elderly':
+        if stage == "elderly":
             return 1.4
-        
+
         return 1.0
 
     def get_maturity_mod(self) -> float:
         stage = self.get_life_stage()
-        
-        if stage == 'infant':
+
+        if stage == "infant":
             return 0.2
-        
-        if stage == 'juvenile':
+
+        if stage == "juvenile":
             return 0.6
-                
-        if stage == 'adult':
+
+        if stage == "adult":
             return 1.0
-        
-        if stage == 'elderly':
+
+        if stage == "elderly":
             return 0.85
-                
+
         return 1.0
-
-
-
-    
 
     def get_effective_memory(self) -> float:
         return self.memory * self.get_maturity_mod()
+
+    # -----------------------------------------------------------------
+    # API representation
+    # -----------------------------------------------------------------
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "hunger": round(self.hunger, 1),
+            "age": self.age,
+            "life_stage": self.get_life_stage(),
+            "health": round(self.health, 1),
+            "name": self.name,
+            "energy": round(self.energy, 1),
+            "state": self.state,
+            "gender": self.gender,
+            "traits": {
+                "boldness": round(self.boldness, 2),
+                "curiosity": round(self.curiosity, 2),
+                "sociability": round(self.sociability, 2),
+                "memory": round(self.memory, 2),
+                "aggression": round(self.aggression, 2),
+                "effective_memory": round(
+                    self.get_effective_memory(),
+                    2,
+                ),
+            },
+            "target": {
+                "x": self.target_x,
+                "y": self.target_y,
+            }
+            if self.target_x is not None
+            and self.target_y is not None
+            else None,
+            "food_memory": [
+                {
+                    "x": x,
+                    "y": y,
+                }
+                for x, y in self.food_memory
+            ],
+        }
