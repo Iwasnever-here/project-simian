@@ -1,14 +1,18 @@
-import random
 import heapq
+import random
 import threading
 
 import opensimplex
 
+from backend.simulation.agents.monkey import Monkey, random_trait
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
-from backend.simulation.agents.monkey import Monkey
-from backend.simulation.agents.monkey import random_trait
+
+
+# ---------------------------------------------------------------------
+# Chunk settings
+# ---------------------------------------------------------------------
 
 CHUNK_SIZE = 32
 
@@ -24,10 +28,15 @@ TERRAIN_CODE = {
 }
 
 
+# ---------------------------------------------------------------------
+# Temple settings
+# ---------------------------------------------------------------------
+
 TEMPLE_X = 235
 TEMPLE_Y = 135
 TEMPLE_WIDTH = 12
 TEMPLE_HEIGHT = 10
+
 
 # ---------------------------------------------------------------------
 # Island shape
@@ -81,6 +90,7 @@ FOREST_TREE_THRESHOLD = 0.2
 GRASS_TREE_THRESHOLD = 0.6
 FRUIT_TREE_THRESHOLD = 0.00
 
+
 # ---------------------------------------------------------------------
 # Monkey spawning
 # ---------------------------------------------------------------------
@@ -88,9 +98,11 @@ FRUIT_TREE_THRESHOLD = 0.00
 SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
 SPAWN_MAX_ATTEMPTS = 200
 
+
 # ---------------------------------------------------------------------
-# World Settings
+# World time settings
 # ---------------------------------------------------------------------
+
 TICKS_PER_DAY = 120
 DAY_START = 30
 NIGHT_START = 90
@@ -102,38 +114,34 @@ class World:
         self.height = height
         self.chunk_size = CHUNK_SIZE
 
-        # Guards all shared mutable simulation state (monkeys, trees,
-        # tick/day counters) against concurrent access between the
-        # background simulation loop thread and FastAPI request threads.
-        # RLock (not Lock) because some locked methods call other
-        # locked methods internally from the same thread (e.g. update()
-        # calls into monkey logic which calls back into World methods
-        # that also acquire the lock) - a plain Lock would deadlock.
+        # Guards shared mutable simulation state against concurrent
+        # access from the simulation loop and FastAPI request threads.
+        # RLock is required because locked methods can call other
+        # locked methods from the same thread.
         self.lock = threading.RLock()
 
+        # Noise generators
         self.elevation_noise = opensimplex.OpenSimplex(seed=12345)
         self.moisture_noise = opensimplex.OpenSimplex(seed=98765)
         self.tree_noise = opensimplex.OpenSimplex(seed=54321)
         self.tree_species_noise = opensimplex.OpenSimplex(seed=13579)
 
-        # Trees are mutable simulation state. They are generated lazily
-        # the first time their chunk is requested, then stored here.
+        # Tree state
         self.trees: dict[tuple[int, int], Tree] = {}
         self.generated_tree_chunks: set[tuple[int, int]] = set()
 
-        # Terrain is still generated once at startup for now. Later this
-        # can also move to lazy chunk generation if worlds become huge.
+        # Terrain state
         self.grid = [[None] * height for _ in range(width)]
 
+        # World time
         self.tick = 0
         self.day = 0
 
-
+        # Monkey state
         self.monkeys: dict[int, Monkey] = {}
         self.next_monkey_id = 1
 
-        
-
+        # Generate terrain
         for x in range(width):
             for y in range(height):
                 elevation = self._fbm(
@@ -156,7 +164,11 @@ class World:
         self._thumbnail = self._build_thumbnail()
 
         for _ in range(100):
-                    self.spawn_random_monkey()
+            self.spawn_random_monkey()
+
+    # -----------------------------------------------------------------
+    # Terrain generation
+    # -----------------------------------------------------------------
 
     def _fbm(
         self,
@@ -236,6 +248,38 @@ class World:
 
         return "grass"
 
+    # -----------------------------------------------------------------
+    # Tiles and walkability
+    # -----------------------------------------------------------------
+
+    def get_tile(self, x, y):
+        if 0 <= x < self.width and 0 <= y < self.height:
+            return self.grid[x][y]
+
+        return None
+
+    def is_walkable(self, x: int, y: int) -> bool:
+        tile = self.get_tile(x, y)
+
+        if tile is None:
+            return False
+
+        if self.is_inside_temple(x, y):
+            return False
+
+        if tile.terrain in {
+            "water",
+            "mountain",
+            "snow",
+        }:
+            return False
+
+        return True
+
+    # -----------------------------------------------------------------
+    # Tree generation and interaction
+    # -----------------------------------------------------------------
+
     def _tree_should_exist(self, x, y):
         tile = self.grid[x][y]
 
@@ -283,12 +327,8 @@ class World:
         )
 
     def _ensure_trees_for_chunk(self, cx, cy):
-        # Mutates self.trees / self.generated_tree_chunks, which are
-        # read and written from both the simulation-loop thread and
-        # request-handling threads (e.g. via get_chunk /
-        # get_visible_fruit_trees), so this must be locked. Safe to
-        # call from a method that already holds the lock since it's
-        # an RLock.
+        # Mutates shared tree state, so this must be locked.
+        # Safe to call while already holding the lock because it is RLock.
         with self.lock:
             chunk_key = (cx, cy)
 
@@ -312,38 +352,6 @@ class World:
 
             self.generated_tree_chunks.add(chunk_key)
 
-    def _build_thumbnail(self, max_dimension=128):
-        scale = min(
-            1.0,
-            max_dimension / max(self.width, self.height),
-        )
-
-        thumb_w = max(1, round(self.width * scale))
-        thumb_h = max(1, round(self.height * scale))
-
-        chars = []
-
-        for ty in range(thumb_h):
-            src_y = min(self.height - 1, int(ty / scale))
-
-            for tx in range(thumb_w):
-                src_x = min(self.width - 1, int(tx / scale))
-                tile = self.grid[src_x][src_y]
-
-                chars.append(TERRAIN_CODE[tile.terrain])
-
-        return {
-            "w": thumb_w,
-            "h": thumb_h,
-            "terrain": "".join(chars),
-        }
-
-    def get_tile(self, x, y):
-        if 0 <= x < self.width and 0 <= y < self.height:
-            return self.grid[x][y]
-
-        return None
-
     def get_tree(self, x, y):
         with self.lock:
             return self.trees.get((x, y))
@@ -356,144 +364,6 @@ class World:
                 return 0
 
             return tree.harvest_fruit(amount)
-
-    def meta(self):
-        with self.lock:
-            return {
-                "width": self.width,
-                "height": self.height,
-                "chunkSize": self.chunk_size,
-                "tick": self.tick,
-                "day": self.day,
-                "hour": round(self.get_hour_of_day(),  1),
-                "isDaytime": self.is_daytime(),
-            }
-
-    def get_chunk(self, cx, cy):
-        x0 = cx * self.chunk_size
-        y0 = cy * self.chunk_size
-
-        if (
-            x0 >= self.width
-            or y0 >= self.height
-            or x0 < 0
-            or y0 < 0
-        ):
-            return None
-
-        x1 = min(x0 + self.chunk_size, self.width)
-        y1 = min(y0 + self.chunk_size, self.height)
-
-        with self.lock:
-            self._ensure_trees_for_chunk(cx, cy)
-
-            chars = []
-            trees = []
-
-            for y in range(y0, y1):
-                for x in range(x0, x1):
-                    tile = self.grid[x][y]
-                    chars.append(TERRAIN_CODE[tile.terrain])
-
-                    tree = self.trees.get((x, y))
-
-                    if tree is None or not tree.alive:
-                        continue
-
-                    trees.append({
-                        "x": tree.x - x0,
-                        "y": tree.y - y0,
-                        "species": tree.species,
-                        "fruit": tree.fruit,
-                        "wood": tree.wood,
-                        "alive": tree.alive,
-                    })
-
-            return {
-                "cx": cx,
-                "cy": cy,
-                "w": x1 - x0,
-                "h": y1 - y0,
-                "terrain": "".join(chars),
-                "trees": trees,
-            }
-
-    def spawn_monkey(self, x, y):
-        if not self.is_walkable(x, y):
-            return None
-
-        name, gender = generate_monkey_identity()
-
-        with self.lock:
-            monkey = Monkey(
-                id=self.next_monkey_id,
-                name = name,
-                gender = gender,
-                x=x,
-                y=y,
-                 boldness=random_trait(),
-                curiosity=random_trait(),
-                sociability=random_trait(),
-                memory=random_trait(),
-                aggression=random_trait(),
-            )
-
-            self.monkeys[monkey.id] = monkey
-            self.next_monkey_id += 1
-
-        return monkey
-
-    def spawn_random_monkey(self, max_attempts=SPAWN_MAX_ATTEMPTS):
-        # Picks a random tile and retries until it lands on spawnable
-        # ground. Fine for occasional single spawns via a button; if this
-        # ever needs to spawn many monkeys at once, switch to sampling
-        # from a precomputed list of valid tiles instead of retry-until-hit.
-        for _ in range(max_attempts):
-            x = random.randrange(self.width)
-            y = random.randrange(self.height)
-
-            tile = self.grid[x][y]
-            if tile.terrain in SPAWNABLE_TERRAIN_BLOCKLIST:
-                continue
-
-            return self.spawn_monkey(x, y)
-
-        return None
-
-    def get_monkeys(self):
-        with self.lock:
-            return [
-                monkey.to_dict()
-                for monkey in self.monkeys.values()
-            ]
-
-    def get_monkey(self, monkey_id):
-        with self.lock:
-            return self.monkeys.get(monkey_id)
-
-    def thumbnail(self):
-        return self._thumbnail
-
-    def update(self):
-        with self.lock:
-            self.tick += 1
-
-            if self.tick >= TICKS_PER_DAY:
-                self.tick = 0
-                self.day += 1
-
-                self._handle_new_day()
-
-            for monkey in self.monkeys.values():
-                monkey.update(self)
-
-            dead_ids = [monkey_id for monkey_id, monkey in self.monkeys.items() if not monkey.alive]
-
-            for monkey_id in dead_ids:
-                del self.monkeys[monkey_id]
-
-            for tree in self.trees.values():
-                tree.update()
 
     def find_nearest_fruit_tree(self, x, y):
         with self.lock:
@@ -547,25 +417,6 @@ class World:
 
             return nearest_tree
 
-    def get_monkey_by_id(self, monkey_id):
-        with self.lock:
-            return self.monkeys.get(monkey_id)
-
-    def _handle_new_day(self):
-        for monkey in self.monkeys.values():
-            monkey.age += 1
-
-    def is_daytime(self):
-        hour = self.get_hour_of_day()
-        return 6 <= hour < 18
-
-    def is_nighttime(self):
-        hour = self.get_hour_of_day()
-        return hour < 6 or hour >= 18
-
-    def get_hour_of_day(self):
-        return (self.tick  / TICKS_PER_DAY ) * 24
-
     def get_visible_fruit_trees(self, x, y, vision_range):
         min_x = max(0, x - vision_range)
         max_x = min(self.width - 1, x + vision_range)
@@ -603,6 +454,206 @@ class World:
 
             return visible
 
+    # -----------------------------------------------------------------
+    # Monkey spawning and lookup
+    # -----------------------------------------------------------------
+
+    def spawn_monkey(self, x, y):
+        if not self.is_walkable(x, y):
+            return None
+
+        name, gender = generate_monkey_identity()
+
+        with self.lock:
+            monkey = Monkey(
+                id=self.next_monkey_id,
+                name=name,
+                gender=gender,
+                x=x,
+                y=y,
+                boldness=random_trait(),
+                curiosity=random_trait(),
+                sociability=random_trait(),
+                memory=random_trait(),
+                aggression=random_trait(),
+            )
+
+            self.monkeys[monkey.id] = monkey
+            self.next_monkey_id += 1
+
+        return monkey
+
+    def spawn_random_monkey(self, max_attempts=SPAWN_MAX_ATTEMPTS):
+        # Picks random tiles until it lands on spawnable ground.
+        for _ in range(max_attempts):
+            x = random.randrange(self.width)
+            y = random.randrange(self.height)
+
+            tile = self.grid[x][y]
+
+            if tile.terrain in SPAWNABLE_TERRAIN_BLOCKLIST:
+                continue
+
+            return self.spawn_monkey(x, y)
+
+        return None
+
+    def get_monkeys(self):
+        with self.lock:
+            return [
+                monkey.to_dict()
+                for monkey in self.monkeys.values()
+            ]
+
+    def get_monkey(self, monkey_id):
+        with self.lock:
+            return self.monkeys.get(monkey_id)
+
+    def get_monkey_by_id(self, monkey_id):
+        with self.lock:
+            return self.monkeys.get(monkey_id)
+
+    # -----------------------------------------------------------------
+    # World update and time
+    # -----------------------------------------------------------------
+
+    def update(self):
+        with self.lock:
+            self.tick += 1
+
+            if self.tick >= TICKS_PER_DAY:
+                self.tick = 0
+                self.day += 1
+
+                self._handle_new_day()
+
+            for monkey in self.monkeys.values():
+                monkey.update(self)
+
+            dead_ids = [
+                monkey_id
+                for monkey_id, monkey in self.monkeys.items()
+                if not monkey.alive
+            ]
+
+            for monkey_id in dead_ids:
+                del self.monkeys[monkey_id]
+
+            for tree in self.trees.values():
+                tree.update()
+
+    def _handle_new_day(self):
+        for monkey in self.monkeys.values():
+            monkey.age += 1
+
+    def get_hour_of_day(self):
+        return (self.tick / TICKS_PER_DAY) * 24
+
+    def is_daytime(self):
+        hour = self.get_hour_of_day()
+        return 6 <= hour < 18
+
+    def is_nighttime(self):
+        hour = self.get_hour_of_day()
+        return hour < 6 or hour >= 18
+
+    # -----------------------------------------------------------------
+    # World API data
+    # -----------------------------------------------------------------
+
+    def meta(self):
+        with self.lock:
+            return {
+                "width": self.width,
+                "height": self.height,
+                "chunkSize": self.chunk_size,
+                "tick": self.tick,
+                "day": self.day,
+                "hour": round(self.get_hour_of_day(), 1),
+                "isDaytime": self.is_daytime(),
+            }
+
+    def _build_thumbnail(self, max_dimension=128):
+        scale = min(
+            1.0,
+            max_dimension / max(self.width, self.height),
+        )
+
+        thumb_w = max(1, round(self.width * scale))
+        thumb_h = max(1, round(self.height * scale))
+
+        chars = []
+
+        for ty in range(thumb_h):
+            src_y = min(self.height - 1, int(ty / scale))
+
+            for tx in range(thumb_w):
+                src_x = min(self.width - 1, int(tx / scale))
+                tile = self.grid[src_x][src_y]
+
+                chars.append(TERRAIN_CODE[tile.terrain])
+
+        return {
+            "w": thumb_w,
+            "h": thumb_h,
+            "terrain": "".join(chars),
+        }
+
+    def thumbnail(self):
+        return self._thumbnail
+
+    def get_chunk(self, cx, cy):
+        x0 = cx * self.chunk_size
+        y0 = cy * self.chunk_size
+
+        if (
+            x0 >= self.width
+            or y0 >= self.height
+            or x0 < 0
+            or y0 < 0
+        ):
+            return None
+
+        x1 = min(x0 + self.chunk_size, self.width)
+        y1 = min(y0 + self.chunk_size, self.height)
+
+        with self.lock:
+            self._ensure_trees_for_chunk(cx, cy)
+
+            chars = []
+            trees = []
+
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    tile = self.grid[x][y]
+                    chars.append(TERRAIN_CODE[tile.terrain])
+
+                    tree = self.trees.get((x, y))
+
+                    if tree is None or not tree.alive:
+                        continue
+
+                    trees.append({
+                        "x": tree.x - x0,
+                        "y": tree.y - y0,
+                        "species": tree.species,
+                        "fruit": tree.fruit,
+                        "wood": tree.wood,
+                        "alive": tree.alive,
+                    })
+
+            return {
+                "cx": cx,
+                "cy": cy,
+                "w": x1 - x0,
+                "h": y1 - y0,
+                "terrain": "".join(chars),
+                "trees": trees,
+            }
+
+    # -----------------------------------------------------------------
+    # Pathfinding
+    # -----------------------------------------------------------------
 
     def find_path(
         self,
@@ -621,7 +672,7 @@ class World:
         heapq.heappush(open_set, (0, start))
 
         came_from = {}
-        g_score = {start: 0,}
+        g_score = {start: 0}
 
         visited = set()
 
@@ -634,15 +685,21 @@ class World:
             visited.add(current)
 
             if current == target:
-                return self._reconstruct_path(came_from,current,)
+                return self._reconstruct_path(
+                    came_from,
+                    current,
+                )
 
             for neighbour in self._get_path_neighbours(
                 current[0],
                 current[1],
             ):
-                tentative_g_score = (g_score[current] + 1)
+                tentative_g_score = g_score[current] + 1
 
-                if tentative_g_score >= g_score.get(neighbour,float("inf"),):
+                if tentative_g_score >= g_score.get(
+                    neighbour,
+                    float("inf"),
+                ):
                     continue
 
                 came_from[neighbour] = current
@@ -653,9 +710,12 @@ class World:
                     abs(neighbour[1] - target_y),
                 )
 
-                priority = (tentative_g_score+ heuristic)
+                priority = tentative_g_score + heuristic
 
-                heapq.heappush(open_set, (priority,neighbour,),)
+                heapq.heappush(
+                    open_set,
+                    (priority, neighbour),
+                )
 
         return []
 
@@ -683,9 +743,8 @@ class World:
             ):
                 continue
 
-            # For diagonal moves, block if both orthogonal "corner"
-            # tiles are blocked - prevents squeezing diagonally
-            # between two walls/water/mountain tiles.
+            # For diagonal moves, block if both orthogonal corner
+            # tiles are blocked.
             if dx != 0 and dy != 0:
                 if (
                     not self.is_walkable(x + dx, y)
@@ -699,8 +758,12 @@ class World:
 
         return neighbours
 
-    def _reconstruct_path(self,came_from,current,):
-        path = [current,]
+    def _reconstruct_path(
+        self,
+        came_from,
+        current,
+    ):
+        path = [current]
 
         while current in came_from:
             current = came_from[current]
@@ -709,6 +772,10 @@ class World:
         path.reverse()
 
         return path[1:]
+
+    # -----------------------------------------------------------------
+    # Temple
+    # -----------------------------------------------------------------
 
     def is_inside_temple(self, x: int, y: int) -> bool:
         return (
@@ -727,22 +794,3 @@ class World:
                 "y": TEMPLE_Y + TEMPLE_HEIGHT - 1,
             },
         }
-
-
-    def is_walkable(self, x: int, y: int) -> bool:
-        tile = self.get_tile(x, y)
-
-        if tile is None:
-            return False
-
-        if self.is_inside_temple(x, y):
-            return False
-
-        if tile.terrain in {
-            "water",
-            "mountain",
-            "snow",
-        }:
-            return False
-
-        return True
