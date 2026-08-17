@@ -79,7 +79,7 @@ type LoadedChunk = {
 
 const TILE_SIZE = 8
 
-const VIEWPORT_WIDTH = 800
+const VIEWPORT_WIDTH = 900
 const VIEWPORT_HEIGHT = 600
 
 const LOAD_MARGIN_CHUNKS = 1

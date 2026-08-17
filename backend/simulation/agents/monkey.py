@@ -21,8 +21,8 @@ SLEEP_ENERGY_THRESHOLD = 30.0
 WAKE_ENERGY_THRESHOLD = 80.0
 MAX_ENERGY = 100.0
 
-MAX_STARVING_TICK = 20
-MAX_EXHAUSTED_TICK = 20
+MAX_STARVING_TICK = 10
+MAX_EXHAUSTED_TICK = 10
 MAX_AGE_DAYS = 3650
 
 SLEEP_ENERGY_RECOVERY = 1.0
@@ -40,6 +40,23 @@ NIGHT_IDLE_RISK = 0.0005
 MOVING_RISK = 0.0003
 RISK_ENERGY_COST = 5.0
 
+MAX_HEALTH = 100.0
+STARVATION_DAMAGE = 2.0
+EXHAUST_DAMAGE = 1.0
+
+INFANT_MAX_AGE = 50
+JUVENILE_MAX_AGE = 100
+ELDERLY_MIN_AGE = 300
+
+MIN_TRAIT_VALUE = 0.0
+MAX_TRAIT_VALUE = 1.0
+
+def random_trait() -> float:
+        value = random.gauss(0.5, 0.15)
+        return max(
+            MIN_TRAIT_VALUE,
+            min(MAX_TRAIT_VALUE, value),
+        )
 
 
 MOVEMENT_DIRECTIONS = [
@@ -63,8 +80,15 @@ class Monkey:
     name: str
     hunger: float = 0.0
     age: int = 0
+    health: float = MAX_HEALTH
     energy: float = 100.0
     state: str = WANDER_STATE
+    boldness: float = 0.5
+    curiosity: float = 0.5
+    sociability: float = 0.5
+    memory: float = 0.5
+    aggression: float = 0.5
+
     target_x: int | None = None
     target_y: int | None = None
     starving_ticks: int = 0
@@ -74,6 +98,7 @@ class Monkey:
     food_memory_cooldowns: dict[tuple[int, int], int] = field(default_factory=dict)
     path: list[tuple[int, int]] = field(default_factory=list)
     moved_this_tick: bool = False
+
 
 
     def update(self, world):
@@ -325,10 +350,23 @@ class Monkey:
             "y": self.y,
             "hunger": round(self.hunger, 1),
             "age": self.age,
+            "life_stage": self.get_life_stage(),
+            "health": round(self.health, 1),
             "name": self.name,
             "energy": round(self.energy, 1),
             "state": self.state,
             "gender": self.gender,
+            "traits": {
+            "boldness": round(self.boldness, 2),
+            "curiosity": round(self.curiosity, 2),
+            "sociability": round(self.sociability, 2),
+            "memory": round(self.memory, 2),
+            "aggression": round(self.aggression, 2),
+            "effective_memory": round(
+                self.get_effective_memory(),
+                2,
+            ),
+        },
             "target": {
                 "x": self.target_x,
                 "y": self.target_y,
@@ -397,15 +435,16 @@ class Monkey:
             self.exhausted_ticks = 0
 
         if self.starving_ticks >= MAX_STARVING_TICK:
-            self.alive = False
+            self.take_damage(STARVATION_DAMAGE)
+            #self.alive = False
             return
 
         if self.exhausted_ticks >= MAX_EXHAUSTED_TICK:
-            self.alive = False
+            self.take_damage(EXHAUST_DAMAGE)
             return
 
         if self.age >= MAX_AGE_DAYS:
-            self.alive = False
+            self.die()
 
     def _find_visible_food(self, world):
         trees = world.get_visible_fruit_trees(
@@ -466,4 +505,77 @@ class Monkey:
                 self.energy - RISK_ENERGY_COST 
             )
 
+    def take_damage(self, amount: float, apply_vulnerability: bool = True):
+        if amount <= 0:
+            return
+
+        if apply_vulnerability:
+            amount *= self.get_vulnerability_mod()
+        
+        self.health = max(0.0, self.health - amount)
+
+        if self.health <= 0:
+            self.die()
+
+    def heal(self, amount: float):
+        if amount <= 0:
+            return
+        self.health = min(MAX_HEALTH, self.health + amount)
+
+    def is_dead(self):
+        return self.health <= 0
+
+    def die(self):
+        self.health = 0.0
+        self.alive = False
+        self.clear_target()
+
+    def get_life_stage(self) -> str:
+        if self.age < INFANT_MAX_AGE:
+            return 'infant'
+        if self.age < JUVENILE_MAX_AGE:
+            return 'juvenile'
+        if self.age < ELDERLY_MIN_AGE:
+            return 'adult'
+        return 'elderly'
+
+    def get_vulnerability_mod(self) -> float:
+        stage = self.get_life_stage()
+
+        if stage == 'infant':
+            return 1.5
+
+        if stage == 'juvenile':
+            return 1.2
+        
+        if stage == 'adult':
+            return 1.0
+
+        if stage == 'elderly':
+            return 1.4
+        
+        return 1.0
+
+    def get_maturity_mod(self) -> float:
+        stage = self.get_life_stage()
+        
+        if stage == 'infant':
+            return 0.2
+        
+        if stage == 'juvenile':
+            return 0.6
+                
+        if stage == 'adult':
+            return 1.0
+        
+        if stage == 'elderly':
+            return 0.85
+                
+        return 1.0
+
+
+
     
+
+    def get_effective_memory(self) -> float:
+        return self.memory * self.get_maturity_mod()

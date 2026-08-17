@@ -29,10 +29,21 @@ type Monkey = {
   y: number
   hunger: number
   age: number
+  life_stage: string
+  health: number
+  alive: boolean
   name: string
   gender: string
   energy: number
   state: string
+  traits: {
+    boldness: number;
+    curiosity: number;
+    sociability: number;
+    memory: number;
+    aggression: number;
+    effective_memory: number;
+  };
 }
 
 
@@ -331,13 +342,6 @@ useEffect(() => {
           gap: 8,
         }}
       >
-        <button
-          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-          onClick={handleSpawnMonkey}
-          disabled={spawning}
-        >
-          {spawning ? 'Spawning...' : 'Spawn Monkey'}
-        </button>
 
         <button
           className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
@@ -372,16 +376,24 @@ useEffect(() => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '240px 800px 240px',
-          gap: 24,
+          gridTemplateColumns: '370px 900px 370px',
+          gap: 35,
           alignItems: 'start',
         }}
       >
-        {/* Empty left column keeps map centred */}
+        {/*  left column keeps map centred */}
         <div className="h-[600px] border border-white p-4 rounded-lg">
           <h3 className="text-xl font-semibold mb-4">
             Population
           </h3>
+
+          <button
+            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+            onClick={handleSpawnMonkey}
+            disabled={spawning}
+          >
+            {spawning ? 'Spawning...' : 'Spawn Monkey'}
+          </button>
 
           <div className="flex flex-col gap-2">
             <div>
@@ -407,8 +419,8 @@ useEffect(() => {
         <div
           style={{
             position: 'relative',
-            width: 800,
-            height: 600,
+            width: 900,
+            height: 700,
           }}
         >
           <WorldCanvas
@@ -447,6 +459,10 @@ useEffect(() => {
               </div>
 
               <div>
+                Stage: {selectedMonkey.life_stage} 
+              </div>
+
+              <div>
                 Age: {selectedMonkey.age} days
               </div>
 
@@ -463,7 +479,25 @@ useEffect(() => {
               </div>
 
               <div>
+                Health: {selectedMonkey.health}/100 
+              </div>
+
+              <div>
                 State: {selectedMonkey.state}
+              </div>
+
+              <div>
+                <h3>Traits</h3>
+
+                <p>Boldness: {selectedMonkey.traits.boldness}</p>
+                <p>Curiosity: {selectedMonkey.traits.curiosity}</p>
+                <p>Sociability: {selectedMonkey.traits.sociability}</p>
+                <p>Memory: {selectedMonkey.traits.memory}</p>
+                <p>Aggression: {selectedMonkey.traits.aggression}</p>
+              </div>
+
+              <div>
+                State: {selectedMonkey.alive ? "Dead" : "Alive"}
               </div>
 
               <button

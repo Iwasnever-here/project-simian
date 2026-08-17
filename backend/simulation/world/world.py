@@ -8,7 +8,7 @@ from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
 from backend.simulation.agents.monkey import Monkey
-
+from backend.simulation.agents.monkey import random_trait
 
 CHUNK_SIZE = 32
 
@@ -431,6 +431,11 @@ class World:
                 gender = gender,
                 x=x,
                 y=y,
+                 boldness=random_trait(),
+                curiosity=random_trait(),
+                sociability=random_trait(),
+                memory=random_trait(),
+                aggression=random_trait(),
             )
 
             self.monkeys[monkey.id] = monkey
