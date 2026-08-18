@@ -5,3 +5,7 @@ packaging==26.3
 pluggy==1.6.0
 Pygments==2.20.0
 pytest==9.1.1
+fastapi==0.100.0
+uvicorn==0.27.0
+opensimplex==0.4
+

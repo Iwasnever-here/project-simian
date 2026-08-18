@@ -17,12 +17,13 @@ tile generation:
 - sleeping at night safer than day
 
 - monkeys should have names and geneders
+- each monkey has traits (boldness, curiosity, sociability, memory, agression)
 
 think about this
 
 - monkeys can repoduce after so many days
 - monkeys have passable traits (genetics)
-- each monkey has traits (boldness, curiosity, sociability, memory, agression)
+
 
 - monkeys can form groups
 - compete for food / areas
