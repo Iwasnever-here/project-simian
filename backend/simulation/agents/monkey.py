@@ -73,6 +73,7 @@ MIN_REPRODUCTION_HEALTH = 50.0
 REPRODUCTION_COOLDOWN_TICKS = 100
 REPRODUCTION_ENERGY_COST = 20.0
 REPRODUCTION_RANGE = 1
+TRAIT_MUTATION_STDDEV = 0.05
 
 
 
@@ -86,6 +87,16 @@ MAX_TRAIT_VALUE = 1.0
 
 def random_trait() -> float:
     value = random.gauss(0.5, 0.15)
+
+    return max(
+        MIN_TRAIT_VALUE,
+        min(MAX_TRAIT_VALUE, value),
+    )
+
+def inherit_trait(parent_a_trait: float, parent_b_trait: float) -> float:
+    inherited = (parent_a_trait + parent_b_trait) / 2.0
+    mutation = random.gauss(0.0, TRAIT_MUTATION_STDDEV)
+    value = inherited + mutation
 
     return max(
         MIN_TRAIT_VALUE,
@@ -664,23 +675,7 @@ class Monkey:
 
         return True
 
-    def find_reproduction_partner(self,monkeys: list["Monkey"],current_tick: int,
-) -> "Monkey | None":
-        for other in monkeys:
-            if not self.is_compatible_for_reproduction(other, current_tick):
-                continue
-
-            distance = max(
-                abs(self.x - other.x),
-                abs(self.y - other.y),
-            )
-
-            if distance <= REPRODUCTION_RANGE:
-                return other
-
-        return None
-
- 
+    
 
     # -----------------------------------------------------------------
     # API representation

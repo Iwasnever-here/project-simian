@@ -4,6 +4,12 @@ import threading
 
 import opensimplex
 
+from backend.simulation.agents.monkey import REPRODUCTION_RANGE
+from backend.simulation.agents.monkey import MAX_HEALTH, Monkey, random_trait
+from backend.simulation.names import generate_monkey_identity
+from backend.simulation.world.tile import Tile
+from backend.simulation.world.tree import Tree
+from backend.simulation.agents.monkey import inherit_trait
 from backend.simulation.agents.monkey import REPRODUCTION_ENERGY_COST, Monkey, random_trait
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
@@ -99,6 +105,8 @@ SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
 SPAWN_MAX_ATTEMPTS = 200
 
 
+
+
 # ---------------------------------------------------------------------
 # World time settings
 # ---------------------------------------------------------------------
@@ -106,6 +114,7 @@ SPAWN_MAX_ATTEMPTS = 200
 TICKS_PER_DAY = 120
 DAY_START = 30
 NIGHT_START = 90
+
 
 
 class World:
@@ -534,6 +543,31 @@ class World:
                 parent_b.id,
             ),
             birth_tick=self.total_tick,
+
+            boldness=inherit_trait(
+                parent_a.boldness,
+                parent_b.boldness,
+            ),
+
+            curiosity=inherit_trait(
+                parent_a.curiosity,
+                parent_b.curiosity,
+            ),
+
+            sociability=inherit_trait(
+                parent_a.sociability,
+                parent_b.sociability,
+            ),
+
+            memory=inherit_trait(
+                parent_a.memory,
+                parent_b.memory,
+            ),
+
+            aggression=inherit_trait(
+                parent_a.aggression,
+                parent_b.aggression,
+            ),
         )
 
         self.next_monkey_id += 1
@@ -541,24 +575,59 @@ class World:
         return child
 
     def _handle_reproduction(self):
-        new_monkeys = []
         monkeys = list(self.monkeys.values())
+
+        paired_ids = set()
+        new_monkeys = []
+
         for monkey in monkeys:
-            if not monkey.can_reproduce(self.total_tick):
+            if monkey.id in paired_ids:
                 continue
 
-            partner = monkey.find_reproduction_partner(
-                monkeys,
+            if not monkey.can_reproduce(
                 self.total_tick,
+            ):
+                continue
+
+            available_monkeys = [
+                other
+                for other in monkeys
+                if other.id not in paired_ids
+            ]
+
+            partner = self.find_reproduction_partner(
+                monkey,
+                available_monkeys,
             )
 
             if partner is None:
                 continue
 
-            child = self.create_child_monkey(monkey, partner)
+            child = self.create_child_monkey(
+                monkey,
+                partner,
+            )
 
-            monkey.energy = max(0, monkey.energy - REPRODUCTION_ENERGY_COST)
-            partner.energy = max(0, partner.energy - REPRODUCTION_ENERGY_COST)
+            monkey.energy = max(
+                0.0,
+                monkey.energy - REPRODUCTION_ENERGY_COST,
+            )
+
+            partner.energy = max(
+                0.0,
+                partner.energy - REPRODUCTION_ENERGY_COST,
+            )
+
+            monkey.last_reproduction_tick = (
+                self.total_tick
+            )
+
+            partner.last_reproduction_tick = (
+                self.total_tick
+            )
+
+            paired_ids.add(monkey.id)
+            paired_ids.add(partner.id)
 
             new_monkeys.append(child)
 
@@ -567,23 +636,36 @@ class World:
                 message=f"{child.name} was born!",
                 data={
                     "child_id": child.id,
-                    "child_name": child.name,
                     "parent_ids": [
                         monkey.id,
                         partner.id,
                     ],
-                    "parent_names": [
-                        monkey.name,
-                        partner.name,
-                    ],
                 },
             )
 
-            monkey.last_reproduction_tick = self.total_tick
-            partner.last_reproduction_tick = self.total_tick
-
         for child in new_monkeys:
             self.monkeys[child.id] = child
+    def find_reproduction_partner(
+        self,
+        monkey: Monkey,
+        available_monkeys: list[Monkey],
+    ) -> Monkey | None:
+        for other in available_monkeys:
+            if not monkey.is_compatible_for_reproduction(
+                other,
+                self.total_tick,
+            ):
+                continue
+
+            distance = max(
+                abs(monkey.x - other.x),
+                abs(monkey.y - other.y),
+            )
+
+            if distance <= REPRODUCTION_RANGE:
+                return other
+
+        return None
     # -----------------------------------------------------------------
     # World update and time
     # -----------------------------------------------------------------

@@ -19,19 +19,24 @@ tile generation:
 - monkeys should have names and geneders
 - each monkey has traits (boldness, curiosity, sociability, memory, agression)
 
-think about this
-
 - monkeys can repoduce after so many days
 - monkeys have passable traits (genetics)
+
+- younger monkeys should not be so skilled as older
+- monkeys should have health bar
+- younger and older monkeys at more risk
+
+think about this
+
 
 
 - monkeys can form groups
 - compete for food / areas
 - monkeys can raise child monkey of theirs
 
-- younger monkeys should not be so skilled as older
-- monkeys should have health bar
-- younger and older monkeys at more risk
+- if monkey is under 50 days and its mum dies - its survial should be harder  - builds on rasiing monkey
+
+
 
 
 tourists
