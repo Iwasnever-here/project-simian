@@ -78,6 +78,10 @@ def get_world_meta():
 def get_temple():
     return world.get_temple()
 
+@app.get("/events")
+def get_events():
+    return world.get_events()
+
 @app.get("/world/chunk/{cx}/{cy}")
 def get_world_chunk(
     cx: int,

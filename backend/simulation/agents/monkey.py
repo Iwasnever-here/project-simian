@@ -68,6 +68,13 @@ INFANT_MAX_AGE = 50
 JUVENILE_MAX_AGE = 100
 ELDERLY_MIN_AGE = 300
 
+MIN_REPRODUCTION_ENERGY = 50.0
+MIN_REPRODUCTION_HEALTH = 50.0
+REPRODUCTION_COOLDOWN_TICKS = 100
+REPRODUCTION_ENERGY_COST = 20.0
+REPRODUCTION_RANGE = 1
+
+
 
 # ---------------------------------------------------------------------
 # Traits
@@ -118,6 +125,11 @@ class Monkey:
     health: float = MAX_HEALTH
     energy: float = 100.0
     state: str = WANDER_STATE
+
+    # Reproduction
+    parent_ids: tuple[int, int] | None = None
+    birth_tick: int = 0
+    last_reproduction_tick: int | None = None
 
     # Genetic traits
     boldness: float = 0.5
@@ -619,6 +631,56 @@ class Monkey:
 
     def get_effective_memory(self) -> float:
         return self.memory * self.get_maturity_mod()
+
+    def can_reproduce(self, current_tick: int) -> bool:
+
+        if not self.alive:
+            return False
+        if self.get_life_stage() != "adult":
+            return False
+
+        if self.energy < MIN_REPRODUCTION_ENERGY:
+            return False
+
+        if self.health < MIN_REPRODUCTION_HEALTH:
+            return False
+
+        if (
+            self.last_reproduction_tick is not None
+            and current_tick - self.last_reproduction_tick
+            < REPRODUCTION_COOLDOWN_TICKS
+        ):
+            return False
+
+        return True
+
+    def is_compatible_for_reproduction(self, other: "Monkey", current_tick: int) -> bool:
+        if self.id == other.id:
+            return False
+        if self.gender == other.gender:
+            return False
+        if not self.can_reproduce(current_tick) or not other.can_reproduce(current_tick):
+            return False
+
+        return True
+
+    def find_reproduction_partner(self,monkeys: list["Monkey"],current_tick: int,
+) -> "Monkey | None":
+        for other in monkeys:
+            if not self.is_compatible_for_reproduction(other, current_tick):
+                continue
+
+            distance = max(
+                abs(self.x - other.x),
+                abs(self.y - other.y),
+            )
+
+            if distance <= REPRODUCTION_RANGE:
+                return other
+
+        return None
+
+ 
 
     # -----------------------------------------------------------------
     # API representation

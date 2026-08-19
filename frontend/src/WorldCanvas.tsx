@@ -59,8 +59,6 @@ type MonkeyData = {
   target: { x: number; y: number } | null
 }
 
-
-
 type ChunkResponse = {
   cx: number
   cy: number
@@ -89,14 +87,12 @@ const MIN_ZOOM = 0.5
 const MAX_ZOOM = 4
 const ZOOM_SPEED = 0.0015
 
-
-
 const TERRAIN_COLOR: Record<string, [number, number, number]> = {
-  w: [100,149,237], 
+  w: [100, 149, 237],
   s: [245, 222, 179],
-  g: [110,139,61],
-  f: [74,93,35],
-  m: [85,93,80],
+  g: [110, 139, 61],
+  f: [74, 93, 35],
+  m: [85, 93, 80],
   r: [120, 110, 100],
   n: [240, 245, 250],
 }
@@ -105,13 +101,20 @@ function chunkKey(cx: number, cy: number) {
   return `${cx}:${cy}`
 }
 
-function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hour }: WorldCanvasProps) {
+function WorldCanvas({
+  worldMeta,
+  apiBase,
+  onViewportChange,
+  onMonkeySelect,
+  hour,
+}: WorldCanvasProps) {
   const { width, height, chunkSize } = worldMeta
 
   const chunkPixelSize = chunkSize * TILE_SIZE
 
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
   const containerRef = useRef<any>(null)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
   const lastPointerRef = useRef({ x: 0, y: 0 })
   const pointerDownRef = useRef({ x: 0, y: 0 })
   const chunksRef = useRef<Map<string, LoadedChunk>>(new Map())
@@ -340,35 +343,42 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
   }, [])
 
   const handleWorldClick = useCallback(
-  (event: FederatedPointerEvent) => {
-    const camera = cameraRef.current
+    (event: FederatedPointerEvent) => {
+      const camera = cameraRef.current
 
-    const worldPixelX =(event.global.x - camera.x) /camera.zoom
+      const worldPixelX = (event.global.x - camera.x) / camera.zoom
+      const worldPixelY = (event.global.y - camera.y) / camera.zoom
 
-    const worldPixelY =(event.global.y - camera.y) /camera.zoom
+      const tileX = Math.floor(worldPixelX / TILE_SIZE)
+      const tileY = Math.floor(worldPixelY / TILE_SIZE)
 
-    const tileX = Math.floor(worldPixelX / TILE_SIZE,)
+      const monkey = monkeys.find(
+        (candidate) => candidate.x === tileX && candidate.y === tileY,
+      )
 
-    const tileY = Math.floor(
-      worldPixelY / TILE_SIZE,
-    )
+      onMonkeySelect?.(monkey?.id ?? null)
+    },
+    [monkeys, onMonkeySelect],
+  )
 
-    const monkey = monkeys.find(
-      (candidate) =>
-        candidate.x === tileX &&
-        candidate.y === tileY,
-    )
+  /*
+   * React's onWheel is registered as a passive listener, so
+   * event.preventDefault() inside it is silently ignored and the page
+   * scrolls underneath the canvas while we also try to zoom. Attaching
+   * a native listener with { passive: false } lets us actually cancel
+   * the scroll, so zooming over the world doesn't scroll the page.
+   */
+  useEffect(() => {
+    const element = wrapperRef.current
 
-    onMonkeySelect?.(monkey?.id ?? null)
-  },
-  [monkeys, onMonkeySelect],
-)
+    if (!element) {
+      return
+    }
 
-  const handleWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
+    const handleWheel = (event: WheelEvent) => {
       event.preventDefault()
 
-      const rect = event.currentTarget.getBoundingClientRect()
+      const rect = element.getBoundingClientRect()
       const mouseX = event.clientX - rect.left
       const mouseY = event.clientY - rect.top
 
@@ -406,19 +416,24 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
       setZoom(nextZoom)
 
       scheduleViewUpdate()
-    },
-    [scheduleViewUpdate],
-  )
+    }
+
+    element.addEventListener('wheel', handleWheel, { passive: false })
+
+    return () => {
+      element.removeEventListener('wheel', handleWheel)
+    }
+  }, [scheduleViewUpdate])
 
   const loadedChunks = Array.from(chunksRef.current.entries())
 
   return (
     <div>
       <div
-        style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT, }}
-        onWheel={handleWheel}
+        ref={wrapperRef}
+        style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }}
       >
-        <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x6495ED}>
+        <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x6495ed}>
           <pixiContainer ref={containerRef}>
             {loadedChunks.map(([key, chunk]) => {
               const [cx, cy] = key.split(':').map(Number)
@@ -449,6 +464,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
                 </pixiContainer>
               )
             })}
+
             {temple && (
               <pixiGraphics
                 draw={(graphics) => {
@@ -476,14 +492,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
                     .fill(0x9f9270)
 
                   // Main temple floor
-                  graphics
-                    .rect(
-                      x,
-                      y,
-                      width,
-                      height,
-                    )
-                    .fill(0xc2b280)
+                  graphics.rect(x, y, width, height).fill(0xc2b280)
 
                   // Inner courtyard
                   graphics
@@ -496,33 +505,14 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
                     .fill(0xd6c69c)
 
                   // Top wall
-                  graphics
-                    .rect(
-                      x,
-                      y,
-                      width,
-                      wallThickness,
-                    )
-                    .fill(0x6b6045)
+                  graphics.rect(x, y, width, wallThickness).fill(0x6b6045)
 
                   // Left wall
-                  graphics
-                    .rect(
-                      x,
-                      y,
-                      wallThickness,
-                      height,
-                    )
-                    .fill(0x6b6045)
+                  graphics.rect(x, y, wallThickness, height).fill(0x6b6045)
 
                   // Right wall
                   graphics
-                    .rect(
-                      x + width - wallThickness,
-                      y,
-                      wallThickness,
-                      height,
-                    )
+                    .rect(x + width - wallThickness, y, wallThickness, height)
                     .fill(0x6b6045)
 
                   // Bottom wall left section
@@ -546,61 +536,24 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
                     .fill(0x6b6045)
 
                   // Corner towers
+                  graphics.circle(x, y, towerRadius).fill(0x786b4d)
+                  graphics.circle(x + width, y, towerRadius).fill(0x786b4d)
+                  graphics.circle(x, y + height, towerRadius).fill(0x786b4d)
                   graphics
-                    .circle(
-                      x,
-                      y,
-                      towerRadius,
-                    )
-                    .fill(0x786b4d)
-
-                  graphics
-                    .circle(
-                      x + width,
-                      y,
-                      towerRadius,
-                    )
-                    .fill(0x786b4d)
-
-                  graphics
-                    .circle(
-                      x,
-                      y + height,
-                      towerRadius,
-                    )
-                    .fill(0x786b4d)
-
-                  graphics
-                    .circle(
-                      x + width,
-                      y + height,
-                      towerRadius,
-                    )
+                    .circle(x + width, y + height, towerRadius)
                     .fill(0x786b4d)
 
                   // Entrance
-                  const entranceX =
-                    temple.entrance.x * TILE_SIZE
-
-                  const entranceY =
-                    temple.entrance.y * TILE_SIZE
+                  const entranceX = temple.entrance.x * TILE_SIZE
+                  const entranceY = temple.entrance.y * TILE_SIZE
 
                   graphics
-                    .rect(
-                      entranceX - TILE_SIZE / 2,
-                      entranceY,
-                      entranceWidth,
-                      TILE_SIZE,
-                    )
+                    .rect(entranceX - TILE_SIZE / 2, entranceY, entranceWidth, TILE_SIZE)
                     .fill(0x3b2a1f)
 
                   // Central shrine
                   graphics
-                    .circle(
-                      x + width / 2,
-                      y + height / 2,
-                      TILE_SIZE * 0.8,
-                    )
+                    .circle(x + width / 2, y + height / 2, TILE_SIZE * 0.8)
                     .fill(0x8f7d52)
                 }}
               />
@@ -631,24 +584,14 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
             />
           </pixiContainer>
 
-          
-
           {nightAlpha > 0 && (
             <pixiGraphics
               draw={(graphics) => {
                 graphics.clear()
 
                 graphics
-                  .rect(
-                    0,
-                    0,
-                    VIEWPORT_WIDTH,
-                    VIEWPORT_HEIGHT,
-                  )
-                  .fill({
-                    color: 0x08111f,
-                    alpha: nightAlpha,
-                  })
+                  .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+                  .fill({ color: 0x08111f, alpha: nightAlpha })
               }}
             />
           )}
@@ -716,7 +659,7 @@ function WorldCanvas({ worldMeta, apiBase, onViewportChange, onMonkeySelect, hou
 
       <div style={{ marginTop: 8, fontSize: 14 }}>
         Zoom: {Math.round(zoom * 100)}%
-      </div> 
+      </div>
     </div>
   )
 }

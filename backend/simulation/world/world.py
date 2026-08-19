@@ -4,7 +4,7 @@ import threading
 
 import opensimplex
 
-from backend.simulation.agents.monkey import Monkey, random_trait
+from backend.simulation.agents.monkey import REPRODUCTION_ENERGY_COST, Monkey, random_trait
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
@@ -136,6 +136,7 @@ class World:
         # World time
         self.tick = 0
         self.day = 0
+        self.total_tick = 0
 
         # Monkey state
         self.monkeys: dict[int, Monkey] = {}
@@ -165,6 +166,10 @@ class World:
 
         for _ in range(100):
             self.spawn_random_monkey()
+
+        # Simulation events
+        self.events = []
+        self.next_event_id = 1
 
     # -----------------------------------------------------------------
     # Terrain generation
@@ -469,6 +474,7 @@ class World:
                 id=self.next_monkey_id,
                 name=name,
                 gender=gender,
+                age = random.randint(0, 350),
                 x=x,
                 y=y,
                 boldness=random_trait(),
@@ -513,6 +519,71 @@ class World:
         with self.lock:
             return self.monkeys.get(monkey_id)
 
+    def create_child_monkey(self, parent_a: Monkey, parent_b: Monkey, ) -> Monkey:
+        name, gender = generate_monkey_identity()
+
+        child = Monkey(
+            id=self.next_monkey_id,
+            x=parent_a.x,
+            y=parent_a.y,
+            name=name,
+            gender=gender,
+            age=0,
+            parent_ids=(
+                parent_a.id,
+                parent_b.id,
+            ),
+            birth_tick=self.total_tick,
+        )
+
+        self.next_monkey_id += 1
+
+        return child
+
+    def _handle_reproduction(self):
+        new_monkeys = []
+        monkeys = list(self.monkeys.values())
+        for monkey in monkeys:
+            if not monkey.can_reproduce(self.total_tick):
+                continue
+
+            partner = monkey.find_reproduction_partner(
+                monkeys,
+                self.total_tick,
+            )
+
+            if partner is None:
+                continue
+
+            child = self.create_child_monkey(monkey, partner)
+
+            monkey.energy = max(0, monkey.energy - REPRODUCTION_ENERGY_COST)
+            partner.energy = max(0, partner.energy - REPRODUCTION_ENERGY_COST)
+
+            new_monkeys.append(child)
+
+            self.add_event(
+                event_type="birth",
+                message=f"{child.name} was born!",
+                data={
+                    "child_id": child.id,
+                    "child_name": child.name,
+                    "parent_ids": [
+                        monkey.id,
+                        partner.id,
+                    ],
+                    "parent_names": [
+                        monkey.name,
+                        partner.name,
+                    ],
+                },
+            )
+
+            monkey.last_reproduction_tick = self.total_tick
+            partner.last_reproduction_tick = self.total_tick
+
+        for child in new_monkeys:
+            self.monkeys[child.id] = child
     # -----------------------------------------------------------------
     # World update and time
     # -----------------------------------------------------------------
@@ -520,15 +591,19 @@ class World:
     def update(self):
         with self.lock:
             self.tick += 1
+            self.total_tick += 1
 
             if self.tick >= TICKS_PER_DAY:
                 self.tick = 0
                 self.day += 1
+                
 
                 self._handle_new_day()
 
             for monkey in self.monkeys.values():
                 monkey.update(self)
+
+            self._handle_reproduction()
 
             dead_ids = [
                 monkey_id
@@ -541,6 +616,32 @@ class World:
 
             for tree in self.trees.values():
                 tree.update()
+
+    def add_event(
+        self,
+        event_type: str,
+        message: str,
+        data: dict | None = None,
+    ):
+        event = {
+            "id": self.next_event_id,
+            "type": event_type,
+            "message": message,
+            "tick": self.total_tick,
+            "day": self.day,
+            "data": data or {},
+        }
+
+        self.events.append(event)
+        self.next_event_id += 1
+
+        # Prevent this growing forever.
+        if len(self.events) > 100:
+            self.events.pop(0)
+
+    def get_events(self):
+        with self.lock:
+            return list(self.events)
 
     def _handle_new_day(self):
         for monkey in self.monkeys.values():
@@ -571,6 +672,7 @@ class World:
                 "day": self.day,
                 "hour": round(self.get_hour_of_day(), 1),
                 "isDaytime": self.is_daytime(),
+                "totalTick": self.total_tick,
             }
 
     def _build_thumbnail(self, max_dimension=128):
