@@ -355,24 +355,49 @@ function WorldCanvas({
     }
   }, [])
 
-  const handleWorldClick = useCallback(
-    (event: FederatedPointerEvent) => {
-      const camera = cameraRef.current
+ const handleWorldClick = useCallback(
+  (event: FederatedPointerEvent) => {
+    const camera = cameraRef.current
 
-      const worldPixelX = (event.global.x - camera.x) / camera.zoom
-      const worldPixelY = (event.global.y - camera.y) / camera.zoom
+    const worldPixelX = (event.global.x - camera.x) / camera.zoom
+    const worldPixelY = (event.global.y - camera.y) / camera.zoom
 
-      const tileX = Math.floor(worldPixelX / TILE_SIZE)
-      const tileY = Math.floor(worldPixelY / TILE_SIZE)
+    let closestMonkey: MonkeyData | null = null
+    let closestDistance = Infinity
 
-      const monkey = monkeys.find(
-        (candidate) => candidate.x === tileX && candidate.y === tileY,
+    for (const monkey of monkeys) {
+      const scale = getMonkeyScale(monkey.life_stage)
+
+      const monkeyX = monkey.x * TILE_SIZE
+      const monkeyY = monkey.y * TILE_SIZE
+
+      const centerX = monkeyX + TILE_SIZE
+      const centerY = monkeyY + TILE_SIZE
+
+      const hitRadius = TILE_SIZE * 1.2 * scale
+
+      const dx = worldPixelX - centerX
+      const dy = worldPixelY - centerY
+
+      const distance = Math.sqrt(
+        dx * dx + dy * dy,
       )
 
-      onMonkeySelect?.(monkey?.id ?? null)
-    },
-    [monkeys, onMonkeySelect],
-  )
+      if (
+        distance <= hitRadius
+        && distance < closestDistance
+      ) {
+        closestMonkey = monkey
+        closestDistance = distance
+      }
+    }
+
+    onMonkeySelect?.(
+      closestMonkey?.id ?? null,
+    )
+  },
+  [monkeys, onMonkeySelect],
+)
 
   /*
    * React's onWheel is registered as a passive listener, so
