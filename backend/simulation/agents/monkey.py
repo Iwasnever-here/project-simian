@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 import random
 
+from backend.simulation.agents.monkeyMemory import MonkeyMemory
+
 
 # ---------------------------------------------------------------------
 # Monkey states
@@ -12,6 +14,11 @@ EATING_STATE = "eating"
 SLEEPING_STATE = "sleeping"
 SEEKING_SHELTER_STATE = "seeking_shelter"
 FOLLOW_MOTHER_STATE = "following_mother"
+APPROACHING_MONEKY_STATE = "approaching_monkey"
+AVOIDING_MONKEY_STATE = "avoiding_monkey"
+FOLLOWING_MONKEY_STATE = "following_monkey"
+CONFRONTING_MONKEY_STATE = "confronting_monkey"
+SOCIAL_IDLE_STATE = "socializing"
 
 
 # ---------------------------------------------------------------------
@@ -77,7 +84,6 @@ REPRODUCTION_RANGE = 1
 TRAIT_MUTATION_STDDEV = 0.05
 
 
-
 # ---------------------------------------------------------------------
 # Traits
 # ---------------------------------------------------------------------
@@ -93,6 +99,7 @@ def random_trait() -> float:
         MIN_TRAIT_VALUE,
         min(MAX_TRAIT_VALUE, value),
     )
+
 
 def inherit_trait(parent_a_trait: float, parent_b_trait: float) -> float:
     inherited = (parent_a_trait + parent_b_trait) / 2.0
@@ -123,6 +130,16 @@ MOVEMENT_DIRECTIONS = [
 ]
 
 MOTHER_FOLLOW_DISTANCE = 2
+
+# Social spacing: instead of fixed "approach vs avoid" cutoffs, monkeys
+# converge on a desired distance derived from sociability/aggression,
+# with a hysteresis band so they settle instead of oscillating.
+MIN_SOCIAL_DISTANCE = 1
+MAX_SOCIAL_DISTANCE = 4
+SOCIAL_DISTANCE_HYSTERESIS = 1
+SOCIAL_DECISION_TICKS = 15
+SOCIAL_MEMORY_RECENCY_TICKS = 300
+AGGRESSION_DOMINANCE_THRESHOLD = 0.2
 
 
 @dataclass
@@ -158,6 +175,8 @@ class Monkey:
     starving_ticks: int = 0
     exhausted_ticks: int = 0
     alive: bool = True
+    target_monkey_id: int | None = None
+    social_decision_cooldown: int = 0
 
     # Memory and pathfinding
     food_memory: list[tuple[int, int]] = field(default_factory=list)
@@ -165,6 +184,8 @@ class Monkey:
         default_factory=dict
     )
     path: list[tuple[int, int]] = field(default_factory=list)
+
+    social_memory: MonkeyMemory = field(default_factory=MonkeyMemory)
 
     # Per-tick movement state
     moved_this_tick: bool = False
@@ -188,6 +209,8 @@ class Monkey:
         else:
             self.update_awake_energy()
 
+            visible_monkeys = self._observe_monkeys(world)
+
             # Food currently has higher priority than sleep.
             if self.hunger >= FOOD_SEEK_THRESHOLD:
                 self._handle_food_seeking(world)
@@ -203,6 +226,12 @@ class Monkey:
                 and self.follow_mother(world)
             ):
                 pass
+            elif self._handle_social_interaction(
+                world,
+                visible_monkeys,
+            ):
+                pass
+
             else:
                 self.state = WANDER_STATE
                 self.clear_target()
@@ -435,10 +464,20 @@ class Monkey:
             y,
         )
 
-    def clear_target(self):
+    def _clear_movement_target(self):
+        # Clears movement/pathing only. Use this when a social behavior
+        # wants to pause walking without forgetting who it's interacting
+        # with (target_monkey_id is preserved).
         self.target_x = None
         self.target_y = None
         self.path.clear()
+
+    def clear_target(self):
+        # Full disengage: clears movement AND forgets the social
+        # target, so `target_monkey_id` doesn't go stale once a monkey
+        # moves on to food/sleep/wander/etc.
+        self._clear_movement_target()
+        self.target_monkey_id = None
 
     def move(self, world, x, y):
         if not world.is_walkable(x, y):
@@ -456,6 +495,7 @@ class Monkey:
         return (
             self.alive and self.parent_ids is not None and self.get_life_stage() in ("infant", "juvenile")
         )
+
     def _get_mother(self, world):
         if self.parent_ids is None:
             return None
@@ -467,7 +507,7 @@ class Monkey:
         return None
 
     def follow_mother(self, world):
-        mother =self._get_mother(world)
+        mother = self._get_mother(world)
 
         if mother is None:
             return False
@@ -485,6 +525,7 @@ class Monkey:
         self._move_toward_target(world)
 
         return True
+
     # -----------------------------------------------------------------
     # Energy and sleep
     # -----------------------------------------------------------------
@@ -715,7 +756,147 @@ class Monkey:
 
         return True
 
-    
+    # -----------------------------------------------------------------
+    # Monkey Behavior and Interaction
+    # -----------------------------------------------------------------
+
+    def _observe_monkeys(self, world):
+        visible_monkeys = world.get_visible_monkeys(
+            self.id,
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+        for other in visible_monkeys:
+            self.social_memory.remember(
+                other.id,
+                other.x,
+                other.y,
+                world.total_tick,
+            )
+        return visible_monkeys
+
+    def _chebyshev_distance(self, x, y):
+        return max(abs(self.x - x), abs(self.y - y))
+
+    def _choose_social_target(self, visible_monkeys, current_tick):
+        # Prefer someone this monkey actually recognizes over a random
+        # stranger, so the `memory` trait has a real effect on who
+        # gets interacted with.
+        known_recent = [
+            m for m in visible_monkeys
+            if (record := self.social_memory.get(m.id)) is not None
+            and current_tick - record.last_seen_tick <= SOCIAL_MEMORY_RECENCY_TICKS
+        ]
+
+        candidates = known_recent if known_recent else visible_monkeys
+
+        return min(
+            candidates,
+            key=lambda m: self._chebyshev_distance(m.x, m.y),
+        )
+
+    def _desired_social_distance(self, other):
+        base = MIN_SOCIAL_DISTANCE + (
+            1.0 - self.sociability
+        ) * (
+            MAX_SOCIAL_DISTANCE
+            - MIN_SOCIAL_DISTANCE
+        )
+
+        threat = other.aggression
+        confidence = self.aggression
+
+        base += threat * 1.5
+        base -= confidence * 1.5
+
+        return max(
+            MIN_SOCIAL_DISTANCE,
+            min(MAX_SOCIAL_DISTANCE, base),
+        )
+
+    def _handle_social_interaction(self, world, visible_monkeys):
+        if not visible_monkeys:
+            return False
+
+        other = self._choose_social_target(visible_monkeys, world.total_tick)
+        distance = self._chebyshev_distance(other.x, other.y)
+
+        aggression_gap = other.aggression - self.aggression
+
+        # Fear overrides sociability: a much less aggressive monkey
+        # flees a much more aggressive one on sight.
+        if aggression_gap >= AGGRESSION_DOMINANCE_THRESHOLD:
+            self._flee_from(world, other)
+            return True
+
+        # Dominance: a much more aggressive monkey closes in to
+        # intimidate, regardless of how sociable it is.
+        if -aggression_gap >= AGGRESSION_DOMINANCE_THRESHOLD:
+            self._confront(world, other)
+            return True
+
+        # Otherwise, converge on a comfortable equilibrium distance
+        # rather than re-deciding a fresh behavior every single tick.
+        same_target = self.target_monkey_id == other.id
+
+        if same_target and self.social_decision_cooldown > 0:
+            self.social_decision_cooldown -= 1
+        else:
+            self.target_monkey_id = other.id
+            self.social_decision_cooldown = SOCIAL_DECISION_TICKS
+
+        desired = self._desired_social_distance(other)
+
+        if distance > desired + SOCIAL_DISTANCE_HYSTERESIS:
+            self.state = (
+                APPROACHING_MONEKY_STATE
+                if self.sociability >= 0.7
+                else FOLLOWING_MONKEY_STATE
+            )
+            self._clear_movement_target()
+            self.set_target(world, other.x, other.y)
+            self._move_toward_target(world)
+
+        elif distance < desired - SOCIAL_DISTANCE_HYSTERESIS:
+            self._flee_from(world, other)
+
+        else:
+            self.state = SOCIAL_IDLE_STATE
+            self._clear_movement_target()
+
+        return True
+
+    def _step_away_from(self, world, other):
+        dx = self.x - other.x
+        dy = self.y - other.y
+
+        step_x = (dx > 0) - (dx < 0)
+        step_y = (dy > 0) - (dy < 0)
+
+        if self.move(world, self.x + step_x, self.y + step_y):
+            return
+
+        self._wander(world)
+
+    def _flee_from(self, world, other):
+        self.state = AVOIDING_MONKEY_STATE
+        self.target_monkey_id = other.id
+        self._clear_movement_target()
+
+        self._step_away_from(world, other)
+
+    def _confront(self, world, other):
+        self.state = CONFRONTING_MONKEY_STATE
+        self.target_monkey_id = other.id
+
+        if self._chebyshev_distance(other.x, other.y) <= MIN_SOCIAL_DISTANCE:
+            self._clear_movement_target()
+            return
+
+        self._clear_movement_target()
+        self.set_target(world, other.x, other.y)
+        self._move_toward_target(world)
 
     # -----------------------------------------------------------------
     # API representation
@@ -733,6 +914,7 @@ class Monkey:
             "name": self.name,
             "energy": round(self.energy, 1),
             "state": self.state,
+            "target_monkey_id": self.target_monkey_id,
             "gender": self.gender,
             "traits": {
                 "boldness": round(self.boldness, 2),

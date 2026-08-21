@@ -645,6 +645,7 @@ class World:
 
         for child in new_monkeys:
             self.monkeys[child.id] = child
+
     def find_reproduction_partner(
         self,
         monkey: Monkey,
@@ -666,6 +667,22 @@ class World:
                 return other
 
         return None
+
+    def get_visible_monkeys(self, monkey_id: int, x: int, y: int, vision_range: int):
+            visible = []
+    
+            for monkey in self.monkeys.values():
+                if not monkey.alive:
+                    continue
+                if monkey.id == monkey_id:
+                    continue
+                distance = max(
+                    abs(monkey.x - x),
+                    abs(monkey.y - y),
+                )
+                if distance <= vision_range:
+                    visible.append(monkey)
+            return visible
     # -----------------------------------------------------------------
     # World update and time
     # -----------------------------------------------------------------

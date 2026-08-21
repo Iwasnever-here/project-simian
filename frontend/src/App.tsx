@@ -36,6 +36,7 @@ type Monkey = {
   gender: string
   energy: number
   state: string
+  target_monkey_id: number | null
   traits: {
     boldness: number
     curiosity: number
@@ -155,22 +156,31 @@ function App() {
   // Simulation status
   // -----------------------------------------------------------------
 
-  useEffect(() => {
-    fetch(`${API_BASE}/simulation/status`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
+    useEffect(() => {
+    const fetchStatus = () => {
+      fetch(`${API_BASE}/simulation/status`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+          return response.json()
+        })
+        .then((data: SimulationStatus) => {
+          setPaused(data.paused)
+          setSimulationSpeed(data.speed)
+        })
+        .catch((error) => {
+          console.error('Simulation status fetch failed:', error)
+        })
+    }
 
-        return response.json()
-      })
-      .then((data: SimulationStatus) => {
-        setPaused(data.paused)
-        setSimulationSpeed(data.speed)
-      })
-      .catch((error) => {
-        console.error('Simulation status fetch failed:', error)
-      })
+    fetchStatus()
+
+    const interval = window.setInterval(fetchStatus, 1000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
   }, [])
 
   // -----------------------------------------------------------------
@@ -446,6 +456,7 @@ function App() {
                 <div>Energy: {selectedMonkey.energy}</div>
                 <div>Health: {selectedMonkey.health}/100</div>
                 <div>State: {selectedMonkey.state}</div>
+                <div>Target Monkey ID: {selectedMonkey.target_monkey_id}</div>
 
                 <div>
                   <h3>Traits</h3>
