@@ -11,6 +11,7 @@ SEEKING_FOOD_STATE = "seeking_food"
 EATING_STATE = "eating"
 SLEEPING_STATE = "sleeping"
 SEEKING_SHELTER_STATE = "seeking_shelter"
+FOLLOW_MOTHER_STATE = "following_mother"
 
 
 # ---------------------------------------------------------------------
@@ -121,6 +122,8 @@ MOVEMENT_DIRECTIONS = [
     (-1, -1),
 ]
 
+MOTHER_FOLLOW_DISTANCE = 2
+
 
 @dataclass
 class Monkey:
@@ -195,7 +198,11 @@ class Monkey:
                 or self.state == SEEKING_SHELTER_STATE
             ):
                 self._handle_seeking_shelter(world)
-
+            elif (
+                self.should_follow_mother()
+                and self.follow_mother(world)
+            ):
+                pass
             else:
                 self.state = WANDER_STATE
                 self.clear_target()
@@ -445,6 +452,39 @@ class Monkey:
 
         return True
 
+    def should_follow_mother(self) -> bool:
+        return (
+            self.alive and self.parent_ids is not None and self.get_life_stage() in ("infant", "juvenile")
+        )
+    def _get_mother(self, world):
+        if self.parent_ids is None:
+            return None
+        for parent_id in self.parent_ids:
+            parent = world.get_monkey_by_id(parent_id)
+            if (parent is not None and parent.alive and parent.gender == "female"):
+                return parent
+
+        return None
+
+    def follow_mother(self, world):
+        mother =self._get_mother(world)
+
+        if mother is None:
+            return False
+
+        distance = max(
+            abs(self.x - mother.x),
+            abs(self.y - mother.y),
+        )
+
+        if distance <= MOTHER_FOLLOW_DISTANCE:
+            return False
+
+        self.state = FOLLOW_MOTHER_STATE
+        self.set_target(world, mother.x, mother.y)
+        self._move_toward_target(world)
+
+        return True
     # -----------------------------------------------------------------
     # Energy and sleep
     # -----------------------------------------------------------------

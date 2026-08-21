@@ -54,6 +54,7 @@ type MonkeyData = {
   y: number
   hunger: number
   energy: number
+  life_stage: string
   age: number
   state: string
   target: { x: number; y: number } | null
@@ -95,6 +96,18 @@ const TERRAIN_COLOR: Record<string, [number, number, number]> = {
   m: [85, 93, 80],
   r: [120, 110, 100],
   n: [240, 245, 250],
+}
+
+function getMonkeyScale(lifeStage: string) {
+  if (lifeStage === 'infant') {
+    return 0.5
+  }
+
+  if (lifeStage === 'juvenile') {
+    return 0.75
+  }
+
+  return 1
 }
 
 function chunkKey(cx: number, cy: number) {
@@ -564,20 +577,54 @@ function WorldCanvas({
                 graphics.clear()
 
                 for (const monkey of monkeys) {
+                  const scale = getMonkeyScale(monkey.life_stage)
+
                   const monkeyX = monkey.x * TILE_SIZE
                   const monkeyY = monkey.y * TILE_SIZE
 
+                  const centerX = monkeyX + TILE_SIZE
+                  const baseY = monkeyY + TILE_SIZE * 2
+
+                  const bodyRadius = TILE_SIZE * 0.7 * scale
+                  const headRadius = TILE_SIZE * 0.5 * scale
+                  const earRadius = TILE_SIZE * 0.2 * scale
+
+                  const bodyCenterY = baseY - bodyRadius
+                  const headCenterY =
+                    bodyCenterY -
+                    bodyRadius -
+                    headRadius * 0.5
+
                   graphics
-                    .circle(monkeyX + TILE_SIZE, monkeyY + TILE_SIZE * 1.3, TILE_SIZE * 0.7) // body
+                    .circle(
+                      centerX,
+                      bodyCenterY,
+                      bodyRadius,
+                    )
                     .fill(0x6b4423)
+
                   graphics
-                    .circle(monkeyX + TILE_SIZE, monkeyY + TILE_SIZE * 0.5, TILE_SIZE * 0.5) // head
+                    .circle(
+                      centerX,
+                      headCenterY,
+                      headRadius,
+                    )
                     .fill(0x7a5230)
+
                   graphics
-                    .circle(monkeyX + TILE_SIZE * 0.5, monkeyY + TILE_SIZE * 0.3, TILE_SIZE * 0.2) // ear
+                    .circle(
+                      centerX - headRadius,
+                      headCenterY,
+                      earRadius,
+                    )
                     .fill(0x7a5230)
+
                   graphics
-                    .circle(monkeyX + TILE_SIZE * 1.5, monkeyY + TILE_SIZE * 0.3, TILE_SIZE * 0.2) // ear
+                    .circle(
+                      centerX + headRadius,
+                      headCenterY,
+                      earRadius,
+                    )
                     .fill(0x7a5230)
                 }
               }}
