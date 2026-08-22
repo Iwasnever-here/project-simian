@@ -170,7 +170,7 @@ class World:
         )
 
         self.boat_landing = (
-            TEMPLE_X + 30,
+            TEMPLE_X + 25,
             TEMPLE_Y + 10,
         )
 
