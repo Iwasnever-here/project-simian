@@ -4,6 +4,7 @@ import threading
 
 import opensimplex
 
+from backend.simulation.agents import tourists
 from backend.simulation.agents.monkey import REPRODUCTION_RANGE
 from backend.simulation.agents.monkey import MAX_HEALTH, Monkey, random_trait
 from backend.simulation.names import generate_monkey_identity
@@ -14,6 +15,7 @@ from backend.simulation.agents.monkey import REPRODUCTION_ENERGY_COST, Monkey, r
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
+from backend.simulation.agents.tourists import Tourist
 
 
 # ---------------------------------------------------------------------
@@ -105,6 +107,13 @@ SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
 SPAWN_MAX_ATTEMPTS = 200
 
 
+# ---------------------------------------------------------------------
+# Tourist spawning
+# ---------------------------------------------------------------------
+TOURIST_ARRIVAL_HOUR = 8
+TOURIST_DEPARTURE_HOUR = 17
+TOURISTS_PER_DAY = 20
+MAX_TEMPLE_CAPACITY = 10
 
 
 # ---------------------------------------------------------------------
@@ -151,6 +160,20 @@ class World:
         self.monkeys: dict[int, Monkey] = {}
         self.next_monkey_id = 1
 
+        # Temple entrance and boat landing derived from the temple
+        # constants (there is no separate `self.temple` object).
+        # Must be set before terrain/monkey generation below, since
+        # is_walkable() -> is_inside_temple() reads self.temple_entrance.
+        self.temple_entrance = (
+            TEMPLE_X + TEMPLE_WIDTH // 2,
+            TEMPLE_Y + TEMPLE_HEIGHT - 1,
+        )
+
+        self.boat_landing = (
+            TEMPLE_X + 30,
+            TEMPLE_Y + 10,
+        )
+
         # Generate terrain
         for x in range(width):
             for y in range(height):
@@ -179,6 +202,14 @@ class World:
         # Simulation events
         self.events = []
         self.next_event_id = 1
+
+        # tourists
+        self.tourists: list[Tourist] = []
+        self.next_tourist_id = 1
+
+        self.last_tourist_boat_day: int | None = None
+
+        self.temple_tourists: set[int] = set()
 
     # -----------------------------------------------------------------
     # Terrain generation
@@ -669,20 +700,21 @@ class World:
         return None
 
     def get_visible_monkeys(self, monkey_id: int, x: int, y: int, vision_range: int):
-            visible = []
-    
-            for monkey in self.monkeys.values():
-                if not monkey.alive:
-                    continue
-                if monkey.id == monkey_id:
-                    continue
-                distance = max(
-                    abs(monkey.x - x),
-                    abs(monkey.y - y),
-                )
-                if distance <= vision_range:
-                    visible.append(monkey)
-            return visible
+        visible = []
+
+        for monkey in self.monkeys.values():
+            if not monkey.alive:
+                continue
+            if monkey.id == monkey_id:
+                continue
+            distance = max(
+                abs(monkey.x - x),
+                abs(monkey.y - y),
+            )
+            if distance <= vision_range:
+                visible.append(monkey)
+        return visible
+
     # -----------------------------------------------------------------
     # World update and time
     # -----------------------------------------------------------------
@@ -695,7 +727,7 @@ class World:
             if self.tick >= TICKS_PER_DAY:
                 self.tick = 0
                 self.day += 1
-                
+
 
                 self._handle_new_day()
 
@@ -715,6 +747,9 @@ class World:
 
             for tree in self.trees.values():
                 tree.update()
+
+            self.update_tourists_arrivals()
+            self.update_tourists()
 
     def add_event(
         self,
@@ -979,6 +1014,12 @@ class World:
     # -----------------------------------------------------------------
 
     def is_inside_temple(self, x: int, y: int) -> bool:
+        # The entrance tile sits on the temple boundary and must stay
+        # walkable, or nothing can ever path to it (A* would search the
+        # whole reachable map every tick and always fail).
+        if (x, y) == self.temple_entrance:
+            return False
+
         return (
             TEMPLE_X <= x < TEMPLE_X + TEMPLE_WIDTH
             and TEMPLE_Y <= y < TEMPLE_Y + TEMPLE_HEIGHT
@@ -995,3 +1036,140 @@ class World:
                 "y": TEMPLE_Y + TEMPLE_HEIGHT - 1,
             },
         }
+
+    # -----------------------------------------------------------------
+    # Tourists
+    # -----------------------------------------------------------------
+
+    # A boatload arrives clustered near the landing, not stacked on one
+    # tile, and each tourist waits a random beat before setting off so
+    # they don't walk the identical path in perfect lockstep.
+    TOURIST_SPAWN_JITTER_RADIUS = 2
+    TOURIST_MAX_SPAWN_DELAY_TICKS = 15
+
+    def spawn_tourists(self, count: int):
+        boat_x, boat_y = self.boat_landing
+        temple_x, temple_y = self.temple_entrance
+
+        for _ in range(count):
+            start = self.get_random_walkable_tile_near(
+                boat_x,
+                boat_y,
+                self.TOURIST_SPAWN_JITTER_RADIUS,
+            )
+
+            start_x, start_y = start if start is not None else (boat_x, boat_y)
+
+            tourist = Tourist(
+                id=self.next_tourist_id,
+                x=start_x,
+                y=start_y,
+                temple_x=temple_x,
+                temple_y=temple_y,
+                boat_x=boat_x,
+                boat_y=boat_y,
+                spawn_delay=random.randint(
+                    0,
+                    self.TOURIST_MAX_SPAWN_DELAY_TICKS,
+                ),
+            )
+
+            self.tourists.append(tourist)
+            self.next_tourist_id += 1
+
+    def update_tourists_arrivals(self):
+        current_hour = self.get_hour_of_day()
+
+        current_day = self.day
+        if current_hour < TOURIST_ARRIVAL_HOUR:
+            return
+
+        if self.last_tourist_boat_day == current_day:
+            return
+
+        self.spawn_tourists(TOURISTS_PER_DAY)
+
+        self.last_tourist_boat_day = current_day
+
+    def update_tourists(self):
+        current_hour = self.get_hour_of_day()
+
+        for tourist in self.tourists:
+            tourist.update(
+                world=self,
+                current_hour=current_hour,
+                current_tick=self.tick,
+            )
+
+        self.remove_departed_tourists()
+
+    def remove_departed_tourists(self):
+        departed_ids = {
+            tourist.id for tourist in self.tourists if not tourist.alive
+        }
+        self.temple_tourists.difference_update(departed_ids)
+
+        self.tourists = [
+            tourist for tourist in self.tourists if tourist.alive
+        ]
+
+    def try_enter_temple(self, tourist: Tourist) -> bool:
+        if tourist.id in self.temple_tourists:
+            return True
+
+        if len(self.temple_tourists) >= MAX_TEMPLE_CAPACITY:
+            return False
+
+        self.temple_tourists.add(tourist.id)
+
+        tourist.enter_temple(
+            current_tick=self.tick,
+            ticks_per_hour=max(1, round(TICKS_PER_DAY / 24)),
+        )
+        return True
+
+    def leave_temple(self, tourist: Tourist):
+        self.temple_tourists.discard(tourist.id)
+
+    def get_random_walkable_tile_near(
+        self,
+        center_x: int,
+        center_y: int,
+        radius: int,
+    ) -> tuple[int, int] | None:
+        candidates: list[tuple[int, int]] = []
+
+        min_x = max(0, center_x - radius)
+        max_x = min(self.width - 1, center_x + radius)
+
+        min_y = max(0, center_y - radius)
+        max_y = min(self.height - 1, center_y + radius)
+
+        for y in range(min_y, max_y + 1):
+            for x in range(min_x, max_x + 1):
+                if not self.is_walkable(x, y):
+                    continue
+
+                candidates.append((x, y))
+
+        if not candidates:
+            return None
+
+        return random.choice(candidates)
+
+    def get_tourists(self):
+        with self.lock:
+            return [
+                {
+                    "id": tourist.id,
+                    "x": tourist.x,
+                    "y": tourist.y,
+                    "state": tourist.state,
+                    "insideTemple": tourist.inside_temple,
+                }
+                for tourist in self.tourists
+            ]
+    
+    def get_boat_landing(self):
+        x, y = self.boat_landing
+        return {"x": x, "y": y}

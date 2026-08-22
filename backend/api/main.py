@@ -78,6 +78,14 @@ def get_world_meta():
 def get_temple():
     return world.get_temple()
 
+@app.get("/tourists")
+def tourists_endpoint():
+    return world.get_tourists()
+
+@app.get("/boat-landing")
+def boat_landing_endpoint():
+    return world.get_boat_landing()
+
 @app.get("/events")
 def get_events():
     return world.get_events()

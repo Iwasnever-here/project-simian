@@ -60,6 +60,19 @@ type MonkeyData = {
   target: { x: number; y: number } | null
 }
 
+type TouristData = {
+  id: number
+  x: number
+  y: number
+  state: string
+  insideTemple: boolean
+}
+
+type BoatLandingData = {
+  x: number
+  y: number
+}
+
 type ChunkResponse = {
   cx: number
   cy: number
@@ -83,6 +96,7 @@ const VIEWPORT_HEIGHT = 600
 
 const LOAD_MARGIN_CHUNKS = 1
 const MONKEY_POLL_INTERVAL = 1000
+const TOURIST_POLL_INTERVAL = 1000
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 4
@@ -138,6 +152,8 @@ function WorldCanvas({
   const [zoom, setZoom] = useState(1)
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
   const [temple, setTemple] = useState<TempleData | null>(null)
+  const [tourists, setTourists] = useState<TouristData[]>([])
+  const [boatLanding, setBoatLanding] = useState<BoatLandingData | null>(null)
 
   const [, bumpVersion] = useState(0)
   const nightAlpha = getNightAlpha(hour)
@@ -264,6 +280,36 @@ function WorldCanvas({
     }
   }, [apiBase])
 
+  const loadTourists = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/tourists`)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data: TouristData[] = await response.json()
+      setTourists(data)
+    } catch (error) {
+      console.error('Tourist fetch failed:', error)
+    }
+  }, [apiBase])
+
+  const loadBoatLanding = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/boat-landing`)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data: BoatLandingData = await response.json()
+      setBoatLanding(data)
+    } catch (error) {
+      console.error('Boat landing fetch failed:', error)
+    }
+  }, [apiBase])
+
   useEffect(() => {
     loadMonkeys()
 
@@ -277,6 +323,20 @@ function WorldCanvas({
   useEffect(() => {
     loadTemple()
   }, [loadTemple])
+
+  useEffect(() => {
+    loadTourists()
+
+    const interval = window.setInterval(loadTourists, TOURIST_POLL_INTERVAL)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [loadTourists])
+
+  useEffect(() => {
+    loadBoatLanding()
+  }, [loadBoatLanding])
 
   const updateVisibleChunks = useCallback(() => {
     const { x: cameraX, y: cameraY, zoom: cameraZoom } = cameraRef.current
@@ -597,6 +657,75 @@ function WorldCanvas({
               />
             )}
 
+            {boatLanding && (
+              <pixiGraphics
+                draw={(graphics) => {
+                  graphics.clear()
+
+                  const x = boatLanding.x * TILE_SIZE
+                  const y = boatLanding.y * TILE_SIZE
+
+                  // Dock
+                  graphics
+                    .rect(
+                      x - TILE_SIZE * 2,
+                      y + TILE_SIZE * 4,
+                      TILE_SIZE * 6,
+                      TILE_SIZE * 0.8,
+                    )
+                    .fill(0x8b6f47)
+
+                  // Large hull
+                  graphics
+                    .poly([
+                      x - TILE_SIZE * 3.5, y + TILE_SIZE * 1.5,
+                      x + TILE_SIZE * 4.5, y + TILE_SIZE * 1.5,
+
+                      x + TILE_SIZE * 3.8, y + TILE_SIZE * 2.8,
+                      x + TILE_SIZE * 3.0, y + TILE_SIZE * 3.6,
+                      x + TILE_SIZE * 2.0, y + TILE_SIZE * 4.1,
+                      x + TILE_SIZE * 0.8, y + TILE_SIZE * 4.4,
+
+                      x - TILE_SIZE * 0.5, y + TILE_SIZE * 4.3,
+                      x - TILE_SIZE * 1.6, y + TILE_SIZE * 3.9,
+                      x - TILE_SIZE * 2.5, y + TILE_SIZE * 3.2,
+                      x - TILE_SIZE * 3.1, y + TILE_SIZE * 2.4,
+                    ])
+                    .fill(0x5c3a21)
+
+                  // Mast
+                  graphics
+                    .rect(
+                      x + TILE_SIZE * 0.35,
+                      y - TILE_SIZE * 4.8,
+                      TILE_SIZE * 0.3,
+                      TILE_SIZE * 6.5,
+                    )
+                    .fill(0x3b2a1f)
+
+                  // Right sail
+                  graphics
+                    .poly([
+                      x + TILE_SIZE * 0.8, y - TILE_SIZE * 4.5,
+                      x + TILE_SIZE * 4.0, y - TILE_SIZE * 3.3,
+                      x + TILE_SIZE * 3.5, y + TILE_SIZE * 0.8,
+                      x + TILE_SIZE * 0.8, y + TILE_SIZE * 0.8,
+                    ])
+                    .fill(0xf4e4bc)
+
+                  // Left sail
+                  graphics
+                    .poly([
+                      x + TILE_SIZE * 0.2, y - TILE_SIZE * 4.1,
+                      x - TILE_SIZE * 3.2, y - TILE_SIZE * 3.0,
+                      x - TILE_SIZE * 2.7, y + TILE_SIZE * 0.8,
+                      x + TILE_SIZE * 0.2, y + TILE_SIZE * 0.8,
+                    ])
+                    .fill(0xe8d39f)
+                }}
+              />
+            )}    
+
             <pixiGraphics
               draw={(graphics) => {
                 graphics.clear()
@@ -651,6 +780,43 @@ function WorldCanvas({
                       earRadius,
                     )
                     .fill(0x7a5230)
+                }
+              }}
+            />
+
+            <pixiGraphics
+              draw={(graphics) => {
+                graphics.clear()
+
+                for (const tourist of tourists) {
+                  if (tourist.insideTemple) {
+                    continue
+                  }
+
+                  const touristX = tourist.x * TILE_SIZE
+                  const touristY = tourist.y * TILE_SIZE
+
+                  const centerX = touristX + TILE_SIZE
+                  const baseY = touristY + TILE_SIZE * 2
+
+                  const bodyRadius = TILE_SIZE * 0.6
+                  const headRadius = TILE_SIZE * 0.4
+
+                  const bodyCenterY = baseY - bodyRadius
+                  const headCenterY =
+                    bodyCenterY - bodyRadius - headRadius * 0.5
+
+                  // Shirt color varies a bit by state so you can eyeball behavior
+                  const shirtColor =
+                    tourist.state === 'inside_temple' ? 0xd4af37 : 0xdd4444
+
+                  graphics
+                    .circle(centerX, bodyCenterY, bodyRadius)
+                    .fill(shirtColor)
+
+                  graphics
+                    .circle(centerX, headCenterY, headRadius)
+                    .fill(0xf0c8a0)
                 }
               }}
             />
