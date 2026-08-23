@@ -157,8 +157,10 @@ class World:
         self.total_tick = 0
 
         # Monkey state
+
         self.monkeys: dict[int, Monkey] = {}
         self.next_monkey_id = 1
+        self.total_monkeys_created = 0
 
         # Temple entrance and boat landing derived from the temple
         # constants (there is no separate `self.temple` object).
@@ -514,7 +516,7 @@ class World:
                 id=self.next_monkey_id,
                 name=name,
                 gender=gender,
-                age = random.randint(0, 350),
+                age=random.randint(0, 350),
                 x=x,
                 y=y,
                 boldness=random_trait(),
@@ -524,9 +526,14 @@ class World:
                 aggression=random_trait(),
             )
 
-            self.monkeys[monkey.id] = monkey
+            self.add_monkey(monkey)
             self.next_monkey_id += 1
 
+        return monkey
+
+    def add_monkey(self, monkey: Monkey) -> Monkey:
+        self.monkeys[monkey.id] = monkey
+        self.total_monkeys_created += 1
         return monkey
 
     def spawn_random_monkey(self, max_attempts=SPAWN_MAX_ATTEMPTS):
@@ -675,7 +682,7 @@ class World:
             )
 
         for child in new_monkeys:
-            self.monkeys[child.id] = child
+            self.add_monkey(child)
 
     def find_reproduction_partner(
         self,

@@ -21,6 +21,9 @@ type Viewport = {
 type SimulationStatus = {
   paused: boolean
   speed: number
+  alive: number
+  total: number
+  deaths: number
 }
 
 type Monkey = {
@@ -67,8 +70,9 @@ function App() {
   const [worldMeta, setWorldMeta] = useState<WorldMeta | null>(null)
   const [viewport, setViewport] = useState<Viewport | null>(null)
 
-  const [monkeyCount, setMonkeyCount] = useState<number | null>(null)
+  const [aliveMonkeys, setAliveMonkeys] = useState<number | null>(null)
   const [totalMonkeys, setTotalMonkeys] = useState<number | null>(null)
+  const [monkeyDeaths, setMonkeyDeaths] = useState<number | null>(null)
   const [spawning, setSpawning] = useState(false)
 
   const [paused, setPaused] = useState<boolean | null>(null)
@@ -118,45 +122,10 @@ function App() {
   }, [])
 
   // -----------------------------------------------------------------
-  // Monkey population
-  // -----------------------------------------------------------------
-
-  useEffect(() => {
-    const fetchMonkeyCount = () => {
-      fetch(`${API_BASE}/monkeys`)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`)
-          }
-
-          return response.json()
-        })
-        .then((monkeys: Monkey[]) => {
-          setMonkeyCount(monkeys.length)
-
-          setTotalMonkeys((current) =>
-            current === null ? monkeys.length : current,
-          )
-        })
-        .catch((error) => {
-          console.error('Monkey list fetch failed:', error)
-        })
-    }
-
-    fetchMonkeyCount()
-
-    const interval = window.setInterval(fetchMonkeyCount, 1000)
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [])
-
-  // -----------------------------------------------------------------
   // Simulation status
   // -----------------------------------------------------------------
 
-    useEffect(() => {
+  useEffect(() => {
     const fetchStatus = () => {
       fetch(`${API_BASE}/simulation/status`)
         .then((response) => {
@@ -168,6 +137,10 @@ function App() {
         .then((data: SimulationStatus) => {
           setPaused(data.paused)
           setSimulationSpeed(data.speed)
+
+          setAliveMonkeys(data.alive)
+          setTotalMonkeys(data.total)
+          setMonkeyDeaths(data.deaths)
         })
         .catch((error) => {
           console.error('Simulation status fetch failed:', error)
@@ -262,11 +235,7 @@ function App() {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
         }
-
         return response.json()
-      })
-      .then(() => {
-        setTotalMonkeys((count) => (count ?? 0) + 1)
       })
       .catch((error) => {
         console.error('Spawn monkey failed:', error)
@@ -386,15 +355,8 @@ function App() {
             </button>
 
             <div className="flex flex-col gap-2">
-              <div>Alive: {monkeyCount ?? '...'}</div>
-
-              <div>
-                Deaths:{' '}
-                {monkeyCount !== null && totalMonkeys !== null
-                  ? totalMonkeys - monkeyCount
-                  : '...'}
-              </div>
-
+              <div>Alive: {aliveMonkeys ?? '...'}</div>
+              <div>Deaths: {monkeyDeaths ?? '...'}</div>
               <div>Total: {totalMonkeys ?? '...'}</div>
             </div>
           </div>

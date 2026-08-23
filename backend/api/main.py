@@ -205,7 +205,11 @@ def set_simulation_speed(speed: float):
 
 @app.get("/simulation/status")
 def get_simulation_status():
+    alive = len(world.monkeys)
     return {
         "paused": simulation_paused,
         "speed": simulation_speed,
+        "alive": alive,
+        "total": world.total_monkeys_created,
+        "deaths": world.total_monkeys_created - alive,
     }
