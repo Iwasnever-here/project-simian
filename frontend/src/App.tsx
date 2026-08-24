@@ -64,6 +64,18 @@ type SimulationEvent = {
   }
 }
 
+type Tourist = {
+  id: number
+  name: string
+  value: number
+  x: number
+  y: number
+  alive: boolean
+  items: {
+    name: string
+    value: number
+  }[]
+}
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
 function App() {
@@ -80,6 +92,9 @@ function App() {
 
   const [selectedMonkeyId, setSelectedMonkeyId] = useState<number | null>(null)
   const [selectedMonkey, setSelectedMonkey] = useState<Monkey | null>(null)
+
+  const [selectedTouristId, setSelectedTouristId] = useState<number | null>(null)
+  const [selectedTourist, setSelectedTourist] = useState<Tourist | null>(null)
 
   const [events, setEvents] = useState<SimulationEvent[]>([])
 
@@ -191,6 +206,44 @@ function App() {
       window.clearInterval(interval)
     }
   }, [selectedMonkeyId])
+  // -----------------------------------------------------------------
+  // Selected tourist
+  // -----------------------------------------------------------------
+
+  useEffect(() => {
+    if (selectedTouristId === null) {
+      setSelectedTourist(null)
+      return
+    }
+
+    const fetchSelectedTourist = () => {
+      fetch(`${API_BASE}/tourists/${selectedTouristId}`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+
+          return response.json()
+        })
+        .then((data: Tourist) => {
+          setSelectedTourist(data)
+        })
+        .catch((error) => {
+          console.error('Selected tourist fetch failed:', error)
+        })
+    }
+
+    fetchSelectedTourist()
+
+    const interval = window.setInterval(
+      fetchSelectedTourist,
+      1000,
+    )
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [selectedTouristId])
 
   // -----------------------------------------------------------------
   // Simulation events
@@ -370,6 +423,7 @@ function App() {
                 apiBase={API_BASE}
                 onViewportChange={setViewport}
                 onMonkeySelect={setSelectedMonkeyId}
+                onTouristSelect={setSelectedTouristId}
                 hour={worldMeta.hour}
               />
 
@@ -434,6 +488,39 @@ function App() {
 
                 <button
                   onClick={() => setSelectedMonkeyId(null)}
+                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+            {selectedTourist && (
+              <div className="h-[600px] border border-white p-4 rounded-lg">
+                <h3 style={{ marginTop: 0 }}>
+                  Tourist {selectedTourist.id}
+                </h3>
+
+                <div>
+                  Position: {selectedTourist.x}, {selectedTourist.y}
+                </div>
+
+
+                <div>
+                  <h3>Items</h3>
+
+                  {selectedTourist.items.length === 0 ? (
+                    <div>No items</div>
+                  ) : (
+                    selectedTourist.items.map((item) => (
+                      <div key={item.name}>
+                        {item.name}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setSelectedTouristId(null)}
                   className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
                   Close

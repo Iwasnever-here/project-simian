@@ -82,6 +82,18 @@ def get_temple():
 def tourists_endpoint():
     return world.get_tourists()
 
+@app.get("/tourists/{tourist_id}")
+def get_tourist(tourist_id: int):
+    tourist = world.get_tourist(tourist_id)
+
+    if tourist is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Tourist not found",
+        )
+
+    return tourist.to_dict()
+
 @app.get("/boat-landing")
 def boat_landing_endpoint():
     return world.get_boat_landing()

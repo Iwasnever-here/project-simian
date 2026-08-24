@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import random
+from .touristItem import TouristItem
 
 
 HEADING_TO_TEMPLE = "heading_to_temple"
@@ -23,6 +24,8 @@ PATH_RETRY_COOLDOWN_TICKS = 20
 @dataclass
 class Tourist:
     id: int
+    name: str
+    value: float
 
     x: int
     y: int
@@ -54,6 +57,19 @@ class Tourist:
 
     alive: bool = True
 
+    items: list[TouristItem] = field(default_factory=list)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "value": self.value,
+            "x": self.x,
+            "y": self.y,
+            "alive": self.alive,
+            "items": [{"name": i.name, "value": i.value} for i in self.items],
+        }
+    
     def update(
         self,
         world,

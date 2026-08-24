@@ -7,6 +7,7 @@ import opensimplex
 from backend.simulation.agents import tourists
 from backend.simulation.agents.monkey import REPRODUCTION_RANGE
 from backend.simulation.agents.monkey import MAX_HEALTH, Monkey, random_trait
+from backend.simulation.agents.touristItem import generate_tourist_items
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
@@ -1079,6 +1080,9 @@ class World:
                     0,
                     self.TOURIST_MAX_SPAWN_DELAY_TICKS,
                 ),
+                name=f"Tourist {self.next_tourist_id}",
+                value=random.uniform(10.0, 100.0),
+                items=generate_tourist_items(),
             )
 
             self.tourists.append(tourist)
@@ -1173,9 +1177,26 @@ class World:
                     "y": tourist.y,
                     "state": tourist.state,
                     "insideTemple": tourist.inside_temple,
+                    "items": [
+                        {
+                            "name": item.name,
+                            "value": item.value,
+                        }
+                        for item in tourist.items
+                    ],
+                    "name": tourist.name,
                 }
                 for tourist in self.tourists
             ]
+
+    def get_tourist(self, tourist_id: int) -> Tourist | None:
+            with self.lock:
+                for tourist in self.tourists:
+                    if tourist.id == tourist_id:
+                        return tourist
+                return None
+
+    
     
     def get_boat_landing(self):
         x, y = self.boat_landing

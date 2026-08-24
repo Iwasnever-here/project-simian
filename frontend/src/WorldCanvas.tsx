@@ -28,6 +28,7 @@ type WorldCanvasProps = {
   apiBase: string
   onViewportChange?: (viewport: Viewport) => void
   onMonkeySelect?: (monkeyId: number | null) => void
+  onTouristSelect?: (touristId: number | null) => void
   hour: number
 }
 
@@ -133,6 +134,7 @@ function WorldCanvas({
   apiBase,
   onViewportChange,
   onMonkeySelect,
+  onTouristSelect,
   hour,
 }: WorldCanvasProps) {
   const { width, height, chunkSize } = worldMeta
@@ -419,14 +421,19 @@ function WorldCanvas({
   (event: FederatedPointerEvent) => {
     const camera = cameraRef.current
 
-    const worldPixelX = (event.global.x - camera.x) / camera.zoom
-    const worldPixelY = (event.global.y - camera.y) / camera.zoom
+    const worldPixelX =
+      (event.global.x - camera.x) / camera.zoom
+
+    const worldPixelY =
+      (event.global.y - camera.y) / camera.zoom
 
     let closestMonkey: MonkeyData | null = null
-    let closestDistance = Infinity
+    let closestMonkeyDistance = Infinity
 
     for (const monkey of monkeys) {
-      const scale = getMonkeyScale(monkey.life_stage)
+      const scale = getMonkeyScale(
+        monkey.life_stage,
+      )
 
       const monkeyX = monkey.x * TILE_SIZE
       const monkeyY = monkey.y * TILE_SIZE
@@ -434,7 +441,8 @@ function WorldCanvas({
       const centerX = monkeyX + TILE_SIZE
       const centerY = monkeyY + TILE_SIZE
 
-      const hitRadius = TILE_SIZE * 1.2 * scale
+      const hitRadius =
+        TILE_SIZE * 1.2 * scale
 
       const dx = worldPixelX - centerX
       const dy = worldPixelY - centerY
@@ -444,19 +452,92 @@ function WorldCanvas({
       )
 
       if (
-        distance <= hitRadius
-        && distance < closestDistance
+        distance <= hitRadius &&
+        distance < closestMonkeyDistance
       ) {
         closestMonkey = monkey
-        closestDistance = distance
+        closestMonkeyDistance = distance
       }
     }
 
-    onMonkeySelect?.(
-      closestMonkey?.id ?? null,
-    )
+    let closestTourist: TouristData | null = null
+    let closestTouristDistance = Infinity
+
+    for (const tourist of tourists) {
+      if (tourist.insideTemple) {
+        continue
+      }
+
+      const touristX =
+        tourist.x * TILE_SIZE
+
+      const touristY =
+        tourist.y * TILE_SIZE
+
+      const centerX =
+        touristX + TILE_SIZE
+
+      const centerY =
+        touristY + TILE_SIZE
+
+      const hitRadius =
+        TILE_SIZE * 1.2
+
+      const dx =
+        worldPixelX - centerX
+
+      const dy =
+        worldPixelY - centerY
+
+      const distance = Math.sqrt(
+        dx * dx + dy * dy,
+      )
+
+      if (
+        distance <= hitRadius &&
+        distance < closestTouristDistance
+      ) {
+        closestTourist = tourist
+        closestTouristDistance = distance
+      }
+    }
+
+    if (
+      closestMonkey &&
+      (
+        !closestTourist ||
+        closestMonkeyDistance <=
+          closestTouristDistance
+      )
+    ) {
+      onMonkeySelect?.(
+        closestMonkey.id,
+      )
+
+      onTouristSelect?.(null)
+
+      return
+    }
+
+    if (closestTourist) {
+      onTouristSelect?.(
+        closestTourist.id,
+      )
+
+      onMonkeySelect?.(null)
+
+      return
+    }
+
+    onMonkeySelect?.(null)
+    onTouristSelect?.(null)
   },
-  [monkeys, onMonkeySelect],
+  [
+    monkeys,
+    tourists,
+    onMonkeySelect,
+    onTouristSelect,
+  ],
 )
 
   /*
