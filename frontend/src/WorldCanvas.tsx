@@ -10,18 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 extend({ Container, Graphics, Sprite })
 
-type WorldMeta = {
-  width: number
-  height: number
-  chunkSize: number
-}
-
-type Viewport = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+import { type WorldMeta, type Viewport, TERRAIN_COLOR } from './types'
 
 type WorldCanvasProps = {
   worldMeta: WorldMeta
@@ -103,15 +92,6 @@ const MIN_ZOOM = 0.5
 const MAX_ZOOM = 4
 const ZOOM_SPEED = 0.0015
 
-const TERRAIN_COLOR: Record<string, [number, number, number]> = {
-  w: [100, 149, 237],
-  s: [245, 222, 179],
-  g: [110, 139, 61],
-  f: [74, 93, 35],
-  m: [85, 93, 80],
-  r: [120, 110, 100],
-  n: [240, 245, 250],
-}
 
 function getMonkeyScale(lifeStage: string) {
   if (lifeStage === 'infant') {

@@ -2,21 +2,9 @@ import { useEffect, useState } from 'react'
 import WorldCanvas from './WorldCanvas'
 import Minimap from './Minimap'
 
-type WorldMeta = {
-  width: number
-  height: number
-  chunkSize: number
-  day: number
-  hour: number
-  isDaytime: boolean
-}
+import { type WorldMeta, type Viewport } from './types'
 
-type Viewport = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+
 
 type SimulationStatus = {
   paused: boolean
@@ -123,6 +111,9 @@ function App() {
           setWorldMeta(data)
         })
         .catch((error) => {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return
+          }
           console.error('World meta fetch failed:', error)
         })
     }
@@ -158,6 +149,9 @@ function App() {
           setMonkeyDeaths(data.deaths)
         })
         .catch((error) => {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return
+          }
           console.error('Simulation status fetch failed:', error)
         })
     }

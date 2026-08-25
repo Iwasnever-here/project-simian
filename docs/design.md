@@ -25,6 +25,10 @@ tile generation:
 - younger monkeys should not be so skilled as older
 - monkeys should have health bar
 - younger and older monkeys at more risk
+- monkeys can raise child monkey of theirs
+
+- if monkey is under 50 days and its mum dies - its survial should be harder  - builds on rasiing monkey
+
 
 think about this
 
@@ -32,11 +36,8 @@ think about this
 
 - monkeys can form groups
 - compete for food / areas
-- monkeys can raise child monkey of theirs
 
-- if monkey is under 50 days and its mum dies - its survial should be harder  - builds on rasiing monkey
-
-
+ ((((fix the pop up error))))
 
 
 tourists
