@@ -1201,3 +1201,28 @@ class World:
     def get_boat_landing(self):
         x, y = self.boat_landing
         return {"x": x, "y": y}
+
+
+    def get_visible_tourists(
+        self,
+        x: int,
+        y: int,
+        vision_range: int,
+    ):
+        visible_tourists = []
+
+        for tourist in self.tourists:
+            if tourist.inside_temple:
+                continue
+
+            dx = tourist.x - x
+            dy = tourist.y - y
+
+            distance_squared = (
+                dx * dx + dy * dy
+            )
+
+            if distance_squared <= vision_range * vision_range:
+                visible_tourists.append(tourist)
+
+        return visible_tourists

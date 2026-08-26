@@ -210,7 +210,7 @@ class Monkey:
             self.update_awake_energy()
 
             visible_monkeys = self._observe_monkeys(world)
-
+            visible_tourists = self._observe_tourists(world)
             # Food currently has higher priority than sleep.
             if self.hunger >= FOOD_SEEK_THRESHOLD:
                 self._handle_food_seeking(world)
@@ -897,6 +897,33 @@ class Monkey:
         self._clear_movement_target()
         self.set_target(world, other.x, other.y)
         self._move_toward_target(world)
+
+    # -----------------------------------------------------------------
+    # Monkey Behavior and Interaction
+    # -----------------------------------------------------------------
+
+    def _observe_tourists(self, world):
+        visible_tourists = world.get_visible_tourists(
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+
+        for tourist in visible_tourists:
+            visible_items = [
+                item.name
+                for item in tourist.items
+            ]
+
+            self.social_memory.remember_tourist(
+                tourist.id,
+                tourist.x,
+                tourist.y,
+                world.total_tick,
+                visible_items,
+            )
+
+        return visible_tourists
 
     # -----------------------------------------------------------------
     # API representation
