@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import random
 
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
+from backend.simulation.world import world
 
 
 # ---------------------------------------------------------------------
@@ -177,6 +178,7 @@ class Monkey:
     alive: bool = True
     target_monkey_id: int | None = None
     social_decision_cooldown: int = 0
+    target_tourist_id: int | None = None
 
     # Memory and pathfinding
     food_memory: list[tuple[int, int]] = field(default_factory=list)
@@ -225,6 +227,9 @@ class Monkey:
                 self.should_follow_mother()
                 and self.follow_mother(world)
             ):
+                pass
+
+            elif self._handle_tourist_investigation(world):
                 pass
             elif self._handle_social_interaction(
                 world,
@@ -478,6 +483,7 @@ class Monkey:
         # moves on to food/sleep/wander/etc.
         self._clear_movement_target()
         self.target_monkey_id = None
+        self.target_tourist_id = None
 
     def move(self, world, x, y):
         if not world.is_walkable(x, y):
@@ -925,6 +931,78 @@ class Monkey:
 
         return visible_tourists
 
+
+
+    def _choose_tourist_to_investigate(self, world):
+        if self.target_tourist_id is not None:
+            tourist = self.social_memory.known_tourists.get(
+                self.target_tourist_id
+            )
+
+            if tourist is not None:
+                if (
+                    tourist.last_seen_tick
+                    >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
+                    and tourist.visible_items
+                ):
+                    return tourist
+
+            self.target_tourist_id = None
+
+        candidates = []
+
+        for tourist in self.social_memory.known_tourists.values():
+            if tourist.last_seen_tick is None:
+                continue
+
+            if tourist.last_seen_tick < (
+                world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
+            ):
+                continue
+
+            if not tourist.visible_items:
+                continue
+
+            candidates.append(tourist)
+
+        if not candidates:
+            return None
+
+
+        interest = (
+            self.curiosity
+            + self.boldness
+        ) / 2
+
+        if interest >= 0.55:
+            chosen = random.choice(candidates)
+            self.target_tourist_id = chosen.tourist_id
+            return chosen
+
+        return None
+
+    def _handle_tourist_investigation(self, world):
+        tourist = self._choose_tourist_to_investigate(world)
+
+        if tourist is None:
+            return False
+
+        self.state = "investigating_tourist"
+        self.target_monkey_id = None
+
+        if (
+            self.target_x != tourist.last_x
+            or self.target_y != tourist.last_y
+        ):
+            self.set_target(
+                world,
+                tourist.last_x,
+                tourist.last_y,
+            )
+
+        self._move_toward_target(world)
+
+        return True
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
