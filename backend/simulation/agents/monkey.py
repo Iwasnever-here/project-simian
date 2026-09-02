@@ -229,7 +229,36 @@ class Monkey:
             ):
                 pass
 
-            elif self._handle_tourist_investigation(world):
+            elif (
+                self.target_tourist_id is not None
+                and self.state in (
+                    "watching_tourist",
+                    "following_tourist",
+                    "scaring_tourist",
+                )
+            ):
+                tourist = next(
+                    (
+                        tourist
+                        for tourist in visible_tourists
+                        if tourist.id == self.target_tourist_id
+                    ),
+                    None,
+                )
+
+                if tourist is None:
+                    self.state = "investigating_tourist"
+
+                else:
+                    self._handle_tourist_interactions(
+                        world,
+                        tourist,
+                    )
+
+            elif self._handle_tourist_investigation(
+                world,
+                visible_tourists,
+            ):
                 pass
             elif self._handle_social_interaction(
                 world,
@@ -934,75 +963,190 @@ class Monkey:
 
 
     def _choose_tourist_to_investigate(self, world):
+        # Keep investigating the current target if the memory is still recent.
         if self.target_tourist_id is not None:
-            tourist = self.social_memory.known_tourists.get(
+            remembered_tourist = self.social_memory.known_tourists.get(
                 self.target_tourist_id
             )
 
-            if tourist is not None:
+            if remembered_tourist is not None:
                 if (
-                    tourist.last_seen_tick
+                    remembered_tourist.last_seen_tick
                     >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
-                    and tourist.visible_items
+                    and remembered_tourist.visible_items
                 ):
-                    return tourist
+                    return remembered_tourist
 
             self.target_tourist_id = None
 
         candidates = []
 
-        for tourist in self.social_memory.known_tourists.values():
-            if tourist.last_seen_tick is None:
+        for remembered_tourist in self.social_memory.known_tourists.values():
+            if remembered_tourist.last_seen_tick is None:
                 continue
 
-            if tourist.last_seen_tick < (
+            if remembered_tourist.last_seen_tick < (
                 world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
             ):
                 continue
 
-            if not tourist.visible_items:
+            if not remembered_tourist.visible_items:
                 continue
 
-            candidates.append(tourist)
+            candidates.append(remembered_tourist)
 
         if not candidates:
             return None
 
+        chosen = random.choice(candidates)
 
-        interest = (
-            self.curiosity
-            + self.boldness
-        ) / 2
+        self.target_tourist_id = chosen.tourist_id
 
-        if interest >= 0.55:
-            chosen = random.choice(candidates)
-            self.target_tourist_id = chosen.tourist_id
-            return chosen
+        return chosen
 
-        return None
+    def _handle_tourist_investigation(
+        self,
+        world,
+        visible_tourists,
+    ):
+        remembered_tourist = self._choose_tourist_to_investigate(
+            world
+        )
 
-    def _handle_tourist_investigation(self, world):
-        tourist = self._choose_tourist_to_investigate(world)
-
-        if tourist is None:
+        if remembered_tourist is None:
             return False
 
         self.state = "investigating_tourist"
         self.target_monkey_id = None
 
+        # Check whether the remembered tourist is currently visible.
+        visible_tourist = next(
+            (
+                tourist
+                for tourist in visible_tourists
+                if tourist.id == remembered_tourist.tourist_id
+            ),
+            None,
+        )
+
+        # -------------------------------------------------------------
+        # Tourist is currently visible
+        # -------------------------------------------------------------
+        if visible_tourist is not None:
+            distance = self._chebyshev_distance(
+                visible_tourist.x,
+                visible_tourist.y,
+            )
+
+            # Close enough to decide how to interact.
+            if distance <= 3:
+                self._clear_movement_target()
+
+                self._handle_tourist_interactions(
+                    world,
+                    visible_tourist,
+                )
+
+                return True
+
+            # Tourist has moved, so follow their current position.
+            if (
+                self.target_x != visible_tourist.x
+                or self.target_y != visible_tourist.y
+            ):
+                self.set_target(
+                    world,
+                    visible_tourist.x,
+                    visible_tourist.y,
+                )
+
+            self._move_toward_target(world)
+
+            return True
+
+        # -------------------------------------------------------------
+        # Tourist is no longer visible
+        # -------------------------------------------------------------
+
+        # Move toward the last place the monkey remembers seeing them.
         if (
-            self.target_x != tourist.last_x
-            or self.target_y != tourist.last_y
+            self.target_x != remembered_tourist.last_x
+            or self.target_y != remembered_tourist.last_y
         ):
             self.set_target(
                 world,
-                tourist.last_x,
-                tourist.last_y,
+                remembered_tourist.last_x,
+                remembered_tourist.last_y,
             )
+
+        # We reached their remembered location and they aren't there.
+        if self._is_at_target():
+            self.clear_target()
+            self.state = WANDER_STATE
+
+            return False
 
         self._move_toward_target(world)
 
         return True
+
+    def _handle_tourist_interactions(
+        self,
+        world,
+        tourist,
+    ):
+        # Aggressive + bold monkeys try to scare tourists.
+        if (
+            self.aggression >= 0.7
+            and self.boldness >= 0.7
+        ):
+            self.state = "scaring_tourist"
+
+            if (
+                self.target_x != tourist.x
+                or self.target_y != tourist.y
+            ):
+                self.set_target(
+                    world,
+                    tourist.x,
+                    tourist.y,
+                )
+
+            self._move_toward_target(world)
+
+            return True
+
+        # Highly curious monkeys stop and watch.
+        if self.curiosity >= 0.8:
+            self.state = "watching_tourist"
+            self._clear_movement_target()
+
+            return True
+
+        # Bold monkeys follow the tourist.
+        if self.boldness >= 0.8:
+            self.state = "following_tourist"
+
+            if (
+                self.target_x != tourist.x
+                or self.target_y != tourist.y
+            ):
+                self.set_target(
+                    world,
+                    tourist.x,
+                    tourist.y,
+                )
+
+            self._move_toward_target(world)
+
+            return True
+
+        # Monkey doesn't care enough.
+        self.state = WANDER_STATE
+        self.clear_target()
+
+        return False
+
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
