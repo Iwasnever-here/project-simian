@@ -18,6 +18,8 @@ type WorldCanvasProps = {
   onViewportChange?: (viewport: Viewport) => void
   onMonkeySelect?: (monkeyId: number | null) => void
   onTouristSelect?: (touristId: number | null) => void
+  selectedMonkeyId: number | null
+  selectedTouristId: number | null
   hour: number
 }
 
@@ -115,6 +117,8 @@ function WorldCanvas({
   onViewportChange,
   onMonkeySelect,
   onTouristSelect,
+  selectedMonkeyId,
+  selectedTouristId,
   hour,
 }: WorldCanvasProps) {
   const { width, height, chunkSize } = worldMeta
@@ -878,6 +882,156 @@ function WorldCanvas({
                   graphics
                     .circle(centerX, headCenterY, headRadius)
                     .fill(0xf0c8a0)
+                }
+              }}
+            />
+            <pixiGraphics
+              draw={(graphics) => {
+                graphics.clear()
+
+                const drawSelectionBox = (
+                  centerX: number,
+                  centerY: number,
+                  boxSize: number,
+                ) => {
+                  const left = centerX - boxSize / 2
+                  const top = centerY - boxSize / 2
+
+                  const cornerLength = boxSize * 0.3
+
+                  // Transparent green background
+                  graphics
+                    .rect(
+                      left,
+                      top,
+                      boxSize,
+                      boxSize,
+                    )
+                    .fill({
+                      color: 0x22c55e,
+                      alpha: 0.18,
+                    })
+
+                  // Top-left
+                  graphics
+                    .moveTo(left, top + cornerLength)
+                    .lineTo(left, top)
+                    .lineTo(left + cornerLength, top)
+                    .stroke({
+                      width: 2,
+                      color: 0xffffff,
+                    })
+
+                  // Top-right
+                  graphics
+                    .moveTo(
+                      left + boxSize - cornerLength,
+                      top,
+                    )
+                    .lineTo(
+                      left + boxSize,
+                      top,
+                    )
+                    .lineTo(
+                      left + boxSize,
+                      top + cornerLength,
+                    )
+                    .stroke({
+                      width: 2,
+                      color: 0xffffff,
+                    })
+
+                  // Bottom-left
+                  graphics
+                    .moveTo(
+                      left,
+                      top + boxSize - cornerLength,
+                    )
+                    .lineTo(
+                      left,
+                      top + boxSize,
+                    )
+                    .lineTo(
+                      left + cornerLength,
+                      top + boxSize,
+                    )
+                    .stroke({
+                      width: 2,
+                      color: 0xffffff,
+                    })
+
+                  // Bottom-right
+                  graphics
+                    .moveTo(
+                      left + boxSize - cornerLength,
+                      top + boxSize,
+                    )
+                    .lineTo(
+                      left + boxSize,
+                      top + boxSize,
+                    )
+                    .lineTo(
+                      left + boxSize,
+                      top + boxSize - cornerLength,
+                    )
+                    .stroke({
+                      width: 2,
+                      color: 0xffffff,
+                    })
+                }
+
+                if (selectedMonkeyId !== null) {
+                  const monkey = monkeys.find(
+                    (monkey) =>
+                      monkey.id === selectedMonkeyId,
+                  )
+
+                  if (monkey) {
+                    const scale = getMonkeyScale(
+                      monkey.life_stage,
+                    )
+
+                    const centerX =
+                      monkey.x * TILE_SIZE + TILE_SIZE
+
+                    const centerY =
+                      monkey.y * TILE_SIZE + TILE_SIZE
+
+                    const boxSize =
+                      TILE_SIZE * 3 * scale
+
+                    drawSelectionBox(
+                      centerX,
+                      centerY,
+                      boxSize,
+                    )
+                  }
+                }
+
+                if (selectedTouristId !== null) {
+                  const tourist = tourists.find(
+                    (tourist) =>
+                      tourist.id === selectedTouristId,
+                  )
+
+                  if (
+                    tourist &&
+                    !tourist.insideTemple
+                  ) {
+                    const centerX =
+                      tourist.x * TILE_SIZE + TILE_SIZE
+
+                    const centerY =
+                      tourist.y * TILE_SIZE + TILE_SIZE
+
+                    const boxSize = TILE_SIZE * 3
+
+                    drawSelectionBox(
+                      centerX,
+                      centerY,
+                      boxSize,
+                    )
+                  }
                 }
               }}
             />

@@ -1,18 +1,32 @@
 :root {
-  --simian-bg: #0b1118;
-  --simian-surface: #111a24;
-  --simian-surface-2: #172230;
-  --simian-surface-3: #1d2a39;
-  --simian-border: rgba(152, 175, 199, 0.16);
-  --simian-border-strong: rgba(152, 175, 199, 0.28);
-  --simian-text: #eef5fb;
-  --simian-muted: #8fa2b6;
-  --simian-blue: #4b9cff;
-  --simian-green: #4fd17a;
-  --simian-yellow: #e7c643;
-  --simian-orange: #ef983b;
-  --simian-red: #ed5d68;
-  --simian-radius: 12px;
+  /* Palette pulled directly from the simulation map */
+  --map-water: #6495ed;
+  --map-sand: #f5deb3;
+  --map-grass: #6e8b3d;
+  --map-forest: #4a5d23;
+  --map-mountain: #555d50;
+  --map-rock: #786e64;
+  --map-snow: #f0f5fa;
+
+  /* UI surfaces derived from the same earthy palette */
+  --simian-bg: #0d120f;
+  --simian-surface: #151b17;
+  --simian-surface-2: #1b231d;
+  --simian-surface-3: #222c24;
+
+  --simian-border: rgba(245, 222, 179, 0.13);
+  --simian-border-strong: rgba(245, 222, 179, 0.24);
+
+  --simian-text: #eef2ea;
+  --simian-muted: #9aa797;
+
+  --simian-blue: var(--map-water);
+  --simian-green: #88a857;
+  --simian-yellow: var(--map-sand);
+  --simian-orange: #b68b5a;
+  --simian-red: #b85f58;
+
+  --simian-radius: 0;
 }
 
 * {
@@ -59,13 +73,7 @@ button {
 
   overflow: hidden;
 
-  background:
-    radial-gradient(
-      circle at 50% 0%,
-      rgba(59, 111, 164, 0.09),
-      transparent 34%
-    ),
-    var(--simian-bg);
+  background: var(--simian-bg);
 }
 
 .simian-loading {
@@ -106,9 +114,9 @@ button {
 
   border-bottom: 1px solid var(--simian-border);
 
-  background: rgba(12, 19, 27, 0.96);
+  background: #101612;
 
-  backdrop-filter: blur(14px);
+  
 }
 
 .simian-brand {
@@ -132,18 +140,18 @@ button {
   display: grid;
   place-items: center;
 
-  border: 1px solid rgba(75, 156, 255, 0.45);
-  border-radius: 9px;
+  border: 1px solid rgba(245, 222, 179, 0.28);
+  border-radius: 0;
 
-  background: rgba(75, 156, 255, 0.08);
+  background: #1b231d;
 
   font-size: 22px;
 }
 
 .simian-brand__title {
   font-size: 18px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 
   white-space: nowrap;
 }
@@ -172,7 +180,7 @@ button {
   align-items: stretch;
 
   border: 1px solid var(--simian-border);
-  border-radius: 9px;
+  border-radius: 0;
 
   overflow: hidden;
 
@@ -186,6 +194,7 @@ button {
   padding: 0 14px;
 
   background: #6f232b;
+  color: #f5e9e9;
 
   font-size: 11px;
   font-weight: 800;
@@ -213,22 +222,22 @@ button {
 
   text-overflow: ellipsis;
 
-  color: #cbd7e4;
+  color: #d7ddd3;
 }
 
 .event-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 
   flex: 0 0 auto;
 
-  border-radius: 999px;
+  border-radius: 50%;
 
-  background: var(--simian-blue);
+  background: var(--map-water);
 }
 
 .event-dot--birth {
-  background: var(--simian-green);
+  background: var(--map-grass);
 }
 
 .event-dot--death {
@@ -279,9 +288,9 @@ button {
   cursor: pointer;
 
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 .simian-button:disabled,
@@ -297,24 +306,24 @@ button {
 
   flex-shrink: 0;
 
-  border-radius: 8px;
+  border-radius: 0;
 
-  background: var(--simian-blue);
+  background: var(--map-grass);
 
-  color: white;
+  color: var(--map-snow);
 
   font-weight: 800;
 }
 
 .simian-button--primary:hover:not(:disabled) {
-  transform: translateY(-1px);
+  background: #7f9d4d;
 }
 
 .simian-button--secondary {
   padding: 10px 14px;
 
   border: 1px solid var(--simian-border-strong);
-  border-radius: 8px;
+  border-radius: 0;
 
   background: var(--simian-surface-2);
 
@@ -333,7 +342,7 @@ button {
   display: flex;
 
   border: 1px solid var(--simian-border);
-  border-radius: 8px;
+  border-radius: 0;
 
   overflow: hidden;
 }
@@ -358,12 +367,11 @@ button {
 }
 
 .speed-control__button--active {
-  background: rgba(75, 156, 255, 0.16);
+  background: rgba(100, 149, 237, 0.12);
 
   color: #fff;
 
-  box-shadow:
-    inset 0 0 0 1px rgba(75, 156, 255, 0.55);
+  box-shadow: inset 0 -2px 0 var(--map-water);
 }
 
 /* =========================
@@ -398,15 +406,9 @@ button {
   min-height: 0;
 
   border: 1px solid var(--simian-border);
-  border-radius: var(--simian-radius);
+  border-radius: 0;
 
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.015),
-      transparent 22%
-    ),
-    var(--simian-surface);
+  background: var(--simian-surface);
 
   overflow: hidden;
 }
@@ -430,7 +432,7 @@ button {
   font-size: 17px;
   line-height: 1;
 
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 .panel__eyebrow {
@@ -477,7 +479,7 @@ button {
   padding: 12px;
 
   border: 1px solid var(--simian-border);
-  border-radius: 9px;
+  border-radius: 0;
 
   background: rgba(6, 12, 18, 0.28);
 }
@@ -485,7 +487,7 @@ button {
 .stat-card strong {
   font-size: 23px;
 
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
 }
 
 .stat-card span {
@@ -569,9 +571,9 @@ button {
   overflow: hidden;
 
   border: 1px solid var(--simian-border);
-  border-radius: var(--simian-radius);
+  border-radius: 0;
 
-  background: #071019;
+  background: #0b120d;
 }
 
 .world-shell__viewport {
@@ -630,14 +632,9 @@ button {
   padding: 7px;
 
   border: 1px solid rgba(158, 183, 208, 0.28);
-  border-radius: 10px;
+  border-radius: 0;
 
-  background: rgba(7, 16, 25, 0.78);
-
-  box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.25);
-
-  backdrop-filter: blur(8px);
+  background: rgba(13, 18, 15, 0.92);
 }
 
 .world-shell__overlay-label {
@@ -648,7 +645,7 @@ button {
 
   letter-spacing: 0.08em;
 
-  color: #c4d1df;
+  color: var(--map-sand);
 }
 
 .world-shell__status {
@@ -664,15 +661,15 @@ button {
   padding: 6px 10px;
 
   border: 1px solid rgba(158, 183, 208, 0.2);
-  border-radius: 7px;
+  border-radius: 0;
 
-  background: rgba(5, 12, 19, 0.72);
+  background: rgba(13, 18, 15, 0.92);
 
-  color: #ced9e5;
+  color: #d8dfd4;
 
   font-size: 11px;
 
-  backdrop-filter: blur(8px);
+  
 }
 
 /* =========================
@@ -729,7 +726,7 @@ button {
   display: grid;
   place-items: center;
 
-  border-radius: 7px;
+  border-radius: 0;
 
   background: transparent;
 
@@ -762,9 +759,9 @@ button {
   place-items: center;
 
   border: 1px solid var(--simian-border);
-  border-radius: 12px;
+  border-radius: 0;
 
-  background: rgba(75, 156, 255, 0.07);
+  background: rgba(110, 139, 61, 0.10);
 
   font-size: 30px;
 }
@@ -794,7 +791,7 @@ button {
   width: 7px;
   height: 7px;
 
-  border-radius: 999px;
+  border-radius: 50%;
 }
 
 .status--alive {
@@ -802,7 +799,7 @@ button {
 }
 
 .status--alive span {
-  background: var(--simian-green);
+  background: var(--map-grass);
 }
 
 .status--dead {
@@ -844,7 +841,7 @@ button {
 }
 
 .meter-row__label strong {
-  color: #dbe5ef;
+  color: #e1e7de;
 }
 
 .progress-track {
@@ -852,9 +849,9 @@ button {
 
   overflow: hidden;
 
-  border-radius: 999px;
+  border-radius: 0;
 
-  background: #09111a;
+  background: #0d120f;
 
   box-shadow:
     inset 0 0 0 1px rgba(167, 188, 210, 0.08);
@@ -867,25 +864,25 @@ button {
 .progress-fill {
   height: 100%;
 
-  border-radius: inherit;
+  border-radius: 0;
 
-  background: var(--simian-blue);
+  background: var(--map-water);
 }
 
 .progress-fill--default {
-  background: var(--simian-blue);
+  background: var(--map-water);
 }
 
 .progress-fill--health {
-  background: var(--simian-green);
+  background: var(--map-grass);
 }
 
 .progress-fill--energy {
-  background: var(--simian-yellow);
+  background: var(--map-sand);
 }
 
 .progress-fill--hunger {
-  background: var(--simian-orange);
+  background: var(--map-rock);
 }
 
 .detail-row + .detail-row,
@@ -905,12 +902,12 @@ button {
 
   padding: 4px 7px;
 
-  border: 1px solid rgba(151, 103, 255, 0.25);
-  border-radius: 6px;
+  border: 1px solid rgba(245, 222, 179, 0.20);
+  border-radius: 0;
 
-  background: rgba(151, 103, 255, 0.13);
+  background: rgba(74, 93, 35, 0.30);
 
-  color: #c8a7ff;
+  color: var(--map-sand);
 
   text-overflow: ellipsis;
 
@@ -930,7 +927,7 @@ button {
   padding: 8px 10px;
 
   border: 1px solid var(--simian-border);
-  border-radius: 7px;
+  border-radius: 0;
 
   background: rgba(6, 12, 18, 0.22);
 }
@@ -955,7 +952,7 @@ button {
   padding: 10px;
 
   border: 1px solid var(--simian-border);
-  border-radius: var(--simian-radius);
+  border-radius: 0;
 
   background: var(--simian-surface);
 
@@ -1013,7 +1010,7 @@ button {
   padding: 10px;
 
   border: 1px solid var(--simian-border);
-  border-radius: 9px;
+  border-radius: 0;
 
   background: rgba(6, 12, 18, 0.25);
 }
@@ -1025,9 +1022,9 @@ button {
   display: grid;
   place-items: center;
 
-  border-radius: 8px;
+  border-radius: 0;
 
-  background: rgba(75, 156, 255, 0.12);
+  background: rgba(100, 149, 237, 0.10);
 
   color: var(--simian-blue);
 
@@ -1035,13 +1032,13 @@ button {
 }
 
 .event-card__icon--birth {
-  background: rgba(79, 209, 122, 0.12);
+  background: rgba(110, 139, 61, 0.18);
 
   color: var(--simian-green);
 }
 
 .event-card__icon--death {
-  background: rgba(237, 93, 104, 0.12);
+  background: rgba(184, 95, 88, 0.16);
 
   color: var(--simian-red);
 }
@@ -1070,7 +1067,7 @@ button {
   font-size: 11px;
   line-height: 1.4;
 
-  color: #c8d4e0;
+  color: #c6d0c3;
 
   display: -webkit-box;
 
@@ -1246,4 +1243,69 @@ button {
     grid-template-columns:
       repeat(3, minmax(190px, 1fr));
   }
+}
+
+/* =========================
+   POLISH
+========================= */
+
+.panel__header,
+.event-feed__header {
+  background: #121914;
+}
+
+.panel__eyebrow,
+.panel-section__title,
+.world-shell__overlay-label {
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+}
+
+.panel__eyebrow,
+.panel-section__title {
+  color: #a8b6a4;
+}
+
+.world-shell {
+  border-color: rgba(245, 222, 179, 0.20);
+}
+
+.world-shell__minimap {
+  border-color: rgba(245, 222, 179, 0.24);
+}
+
+.world-shell__status {
+  border-color: rgba(245, 222, 179, 0.18);
+}
+
+.stat-card,
+.item-row,
+.event-card {
+  background: #111713;
+}
+
+.stat-card:hover,
+.item-row:hover,
+.event-card:hover {
+  border-color: var(--simian-border-strong);
+}
+
+.speed-control__button:hover:not(:disabled),
+.icon-button:hover {
+  background: #202a22;
+}
+
+.simian-button--secondary {
+  background: #1b231d;
+}
+
+.simian-button--secondary:hover:not(:disabled) {
+  background: #232e26;
+}
+
+::selection {
+  background: rgba(100, 149, 237, 0.25);
 }

@@ -146,6 +146,7 @@ function App() {
     )
   }
 
+
   useEffect(() => {
     const fetchWorldMeta = () => {
       fetch(`${API_BASE}/world/meta`)
@@ -549,15 +550,11 @@ function App() {
               <WorldCanvas
                 worldMeta={worldMeta}
                 apiBase={API_BASE}
-                onViewportChange={
-                  setViewport
-                }
-                onMonkeySelect={
-                  setSelectedMonkeyId
-                }
-                onTouristSelect={
-                  setSelectedTouristId
-                }
+                onViewportChange={setViewport}
+                onMonkeySelect={setSelectedMonkeyId}
+                onTouristSelect={setSelectedTouristId}
+                selectedMonkeyId={selectedMonkeyId}
+                selectedTouristId={selectedTouristId}
                 hour={worldMeta.hour}
               />
 
