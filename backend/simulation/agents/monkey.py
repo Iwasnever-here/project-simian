@@ -141,7 +141,8 @@ SOCIAL_DISTANCE_HYSTERESIS = 1
 SOCIAL_DECISION_TICKS = 15
 SOCIAL_MEMORY_RECENCY_TICKS = 300
 AGGRESSION_DOMINANCE_THRESHOLD = 0.2
-
+TOURIST_INTERACTION_DURATION = 20
+TOURIST_INTERACTION_COOLDOWN_TICKS = 30
 
 @dataclass
 class Monkey:
@@ -178,6 +179,8 @@ class Monkey:
     alive: bool = True
     target_monkey_id: int | None = None
     social_decision_cooldown: int = 0
+    tourist_interaction_ticks: int = 0
+    tourist_interaction_cooldown: int = 0
     target_tourist_id: int | None = None
 
     # Memory and pathfinding
@@ -204,6 +207,7 @@ class Monkey:
 
         self._increase_hunger()
         self._update_food_memory_cooldowns()
+        self._update_tourist_interaction_cooldown()
 
         if self.state == SLEEPING_STATE:
             self._sleep(world)
@@ -237,23 +241,26 @@ class Monkey:
                     "scaring_tourist",
                 )
             ):
-                tourist = next(
-                    (
-                        tourist
-                        for tourist in visible_tourists
-                        if tourist.id == self.target_tourist_id
-                    ),
-                    None,
-                )
-
-                if tourist is None:
-                    self.state = "investigating_tourist"
-
+                if not self._update_tourist_interaction_ticks():
+                    pass
                 else:
-                    self._handle_tourist_interactions(
-                        world,
-                        tourist,
+                    tourist = next(
+                        (
+                            tourist
+                            for tourist in visible_tourists
+                            if tourist.id == self.target_tourist_id
+                        ),
+                        None,
                     )
+
+                    if tourist is None:
+                        self.state = "investigating_tourist"
+
+                    else:
+                        self._handle_tourist_interactions(
+                            world,
+                            tourist,
+                        )
 
             elif self._handle_tourist_investigation(
                 world,
@@ -963,6 +970,8 @@ class Monkey:
 
 
     def _choose_tourist_to_investigate(self, world):
+        if self.tourist_interaction_cooldown > 0:
+            return None
         # Keep investigating the current target if the memory is still recent.
         if self.target_tourist_id is not None:
             remembered_tourist = self.social_memory.known_tourists.get(
@@ -1102,6 +1111,9 @@ class Monkey:
         ):
             self.state = "scaring_tourist"
 
+            if self.tourist_interaction_ticks == 0:
+                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
+
             if (
                 self.target_x != tourist.x
                 or self.target_y != tourist.y
@@ -1119,6 +1131,9 @@ class Monkey:
         # Highly curious monkeys stop and watch.
         if self.curiosity >= 0.8:
             self.state = "watching_tourist"
+            if self.tourist_interaction_ticks == 0:
+                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
+            
             self._clear_movement_target()
 
             return True
@@ -1126,6 +1141,8 @@ class Monkey:
         # Bold monkeys follow the tourist.
         if self.boldness >= 0.8:
             self.state = "following_tourist"
+            if self.tourist_interaction_ticks == 0:
+                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
 
             if (
                 self.target_x != tourist.x
@@ -1143,9 +1160,26 @@ class Monkey:
 
         # Monkey doesn't care enough.
         self.state = WANDER_STATE
+        self.tourist_interaction_ticks = 0
         self.clear_target()
 
         return False
+
+    def _update_tourist_interaction_ticks(self):
+        if self.tourist_interaction_ticks > 0:
+            self.tourist_interaction_ticks -= 1
+
+        if self.tourist_interaction_ticks <=0:
+            self.state = WANDER_STATE
+            self.tourist_interaction_cooldown = TOURIST_INTERACTION_COOLDOWN_TICKS
+            self.clear_target()
+            return False
+
+        return True
+
+    def _update_tourist_interaction_cooldown(self):
+        if self.tourist_interaction_cooldown > 0:
+            self.tourist_interaction_cooldown -= 1
 
     # -----------------------------------------------------------------
     # API representation
@@ -1162,6 +1196,7 @@ class Monkey:
             "health": round(self.health, 1),
             "name": self.name,
             "energy": round(self.energy, 1),
+            "tourist_interaction_ticks": self.tourist_interaction_ticks,
             "state": self.state,
             "target_monkey_id": self.target_monkey_id,
             "gender": self.gender,
