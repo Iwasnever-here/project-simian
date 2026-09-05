@@ -1226,3 +1226,21 @@ class World:
                 visible_tourists.append(tourist)
 
         return visible_tourists
+
+
+    def get_nearby_monkeys(self, x: int, y: int,  vision_range: int,):
+        nearby = []
+
+        for monkey in self.monkeys.values():
+            if not monkey.alive:
+                continue
+
+            distance = max(
+                abs(monkey.x - x),
+                abs(monkey.y - y),
+            )
+
+            if distance <= vision_range:
+                nearby.append(monkey)
+
+        return nearby
