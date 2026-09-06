@@ -3,6 +3,7 @@ import random
 
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
+from .touristItem import TouristItem
 
 
 # ---------------------------------------------------------------------
@@ -191,7 +192,7 @@ class Monkey:
     path: list[tuple[int, int]] = field(default_factory=list)
 
     social_memory: MonkeyMemory = field(default_factory=MonkeyMemory)
-
+    held_items: list[TouristItem] = field(default_factory=list)
     # Per-tick movement state
     moved_this_tick: bool = False
 
@@ -1107,7 +1108,7 @@ class Monkey:
         # Aggressive + bold monkeys try to scare tourists.
         if (
             self.aggression >= 0.7
-            and self.boldness >= 0.7
+            and self.boldness >= 0.4
         ):
             self.state = "scaring_tourist"
 
@@ -1180,6 +1181,14 @@ class Monkey:
     def _update_tourist_interaction_cooldown(self):
         if self.tourist_interaction_cooldown > 0:
             self.tourist_interaction_cooldown -= 1
+
+
+    def grab_item(self, world, tourist, item):
+        return world.transfer_item_to_monkey(
+            self,
+            tourist,
+            item,
+        )
 
     # -----------------------------------------------------------------
     # API representation

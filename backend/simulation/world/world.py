@@ -1244,3 +1244,17 @@ class World:
                 nearby.append(monkey)
 
         return nearby
+
+    def transfer_item_to_monkey(self, monkey, tourist, item):
+        if item not in tourist.items:
+            return False
+
+        distance = max(
+            abs(monkey.x - tourist.x),
+            abs(monkey.y - tourist.y),
+        )
+        if distance > 3:
+            return False
+        
+        tourist.items.remove(item)
+        monkey.held_items.append(item)
