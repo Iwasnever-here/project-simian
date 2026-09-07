@@ -1258,3 +1258,5 @@ class World:
         
         tourist.items.remove(item)
         monkey.held_items.append(item)
+
+        return True

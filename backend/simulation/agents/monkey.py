@@ -195,6 +195,9 @@ class Monkey:
     held_items: list[TouristItem] = field(default_factory=list)
     # Per-tick movement state
     moved_this_tick: bool = False
+    current_tourist_action: str | None = None
+    last_tourist_action: str | None = None
+    last_tourist_action_success: bool | None = None
 
     # -----------------------------------------------------------------
     # Main update
@@ -1100,78 +1103,26 @@ class Monkey:
 
         return True
 
-    def _handle_tourist_interactions(
-        self,
-        world,
-        tourist,
-    ):
-        # Aggressive + bold monkeys try to scare tourists.
-        if (
-            self.aggression >= 0.7
-            and self.boldness >= 0.4
-        ):
-            self.state = "scaring_tourist"
+    def _handle_tourist_interactions(self, world, tourist):
+        if self.tourist_interaction_ticks == 0:
+            self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
 
-            if self.tourist_interaction_ticks == 0:
-                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
+        if self.current_tourist_action is None:
+            self.current_tourist_action = self._choose_tourist_action(tourist)
 
-            if (
-                self.target_x != tourist.x
-                or self.target_y != tourist.y
-            ):
-                self.set_target(
-                    world,
-                    tourist.x,
-                    tourist.y,
-                )
-
-            self._move_toward_target(world)
-
-            return True
-
-        # Highly curious monkeys stop and watch.
-        if self.curiosity >= 0.8:
-            self.state = "watching_tourist"
-            if self.tourist_interaction_ticks == 0:
-                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
-            
-            self._clear_movement_target()
-
-            return True
-
-        # Bold monkeys follow the tourist.
-        if self.boldness >= 0.8:
-            self.state = "following_tourist"
-            if self.tourist_interaction_ticks == 0:
-                self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
-
-            if (
-                self.target_x != tourist.x
-                or self.target_y != tourist.y
-            ):
-                self.set_target(
-                    world,
-                    tourist.x,
-                    tourist.y,
-                )
-
-            self._move_toward_target(world)
-
-            return True
-
-        # Monkey doesn't care enough.
-        self.state = WANDER_STATE
-        self.tourist_interaction_ticks = 0
-        self.clear_target()
-
-        return False
+        return self._execute_tourist_action(
+            world,
+            tourist,
+            self.current_tourist_action,
+        )
 
     def _update_tourist_interaction_ticks(self):
         if self.tourist_interaction_ticks > 0:
             self.tourist_interaction_ticks -= 1
 
-        if self.tourist_interaction_ticks <=0:
+        if self.tourist_interaction_ticks <= 0:
             self.state = WANDER_STATE
+            self.current_tourist_action = None
             self.tourist_interaction_cooldown = TOURIST_INTERACTION_COOLDOWN_TICKS
             self.clear_target()
             return False
@@ -1189,6 +1140,88 @@ class Monkey:
             tourist,
             item,
         )
+
+
+    def _choose_tourist_action(self, tourist):
+        actions = [
+            "watch",
+            "follow",
+            "scare",
+            "leave"
+        ]
+
+        if tourist.items:
+            actions.append("grab_item")
+
+        return random.choice(actions)
+
+    def _execute_tourist_action(self, world, tourist, action):
+        self.last_tourist_action = action
+
+        if action == "watch":
+            self.state = "watching_tourist"
+            self._clear_movement_target()
+            self.last_tourist_action_success = True
+            return True
+
+        if action == "follow":
+            self.state = "following_tourist"
+
+            if (
+                self.target_x != tourist.x
+                or self.target_y != tourist.y
+            ):
+                self.set_target(
+                    world,
+                    tourist.x,
+                    tourist.y,
+                )
+
+            self._move_toward_target(world)
+            self.last_tourist_action_success = True
+            return True
+
+        if action == "scare":
+            self.state = "scaring_tourist"
+            self.last_tourist_action_success = True
+            return True
+
+        if action == "grab_item":
+            if not tourist.items:
+                self.last_tourist_action_success = False
+                self.current_tourist_action = None
+                return False
+
+            item = random.choice(tourist.items)
+
+            success = self.grab_item(
+                world,
+                tourist,
+                item,
+            )
+
+            self.last_tourist_action_success = success
+
+            self.current_tourist_action = None
+            self.tourist_interaction_ticks = 0
+            self.tourist_interaction_cooldown = (
+                TOURIST_INTERACTION_COOLDOWN_TICKS
+            )
+            self.clear_target()
+
+            return success
+
+        if action == "leave":
+            self.state = WANDER_STATE
+            self.current_tourist_action = None
+            self.tourist_interaction_ticks = 0
+            self.tourist_interaction_cooldown = (
+                TOURIST_INTERACTION_COOLDOWN_TICKS
+            )
+            self.clear_target()
+            self.last_tourist_action_success = True
+            return False
+
 
     # -----------------------------------------------------------------
     # API representation
@@ -1233,5 +1266,15 @@ class Monkey:
                     "y": y,
                 }
                 for x, y in self.food_memory
+            ],
+            "current_tourist_action": self.current_tourist_action,
+            "last_tourist_action": self.last_tourist_action,
+            "last_tourist_action_success": self.last_tourist_action_success,
+            "held_items": [
+                {
+                    "name": item.name,
+                    "value": item.value,
+                }
+                for item in self.held_items
             ],
         }
