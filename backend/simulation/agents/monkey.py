@@ -145,6 +145,10 @@ AGGRESSION_DOMINANCE_THRESHOLD = 0.2
 TOURIST_INTERACTION_DURATION = 20
 TOURIST_INTERACTION_COOLDOWN_TICKS = 30
 
+
+HUNGER_REWARD_WEIGHT = 1.0
+ENERGY_REWARD_WEIGHT = 0.1
+HEALTH_REWARD_WEIGHT = 1.0
 @dataclass
 class Monkey:
     id: int
@@ -199,11 +203,18 @@ class Monkey:
     last_tourist_action: str | None = None
     last_tourist_action_success: bool | None = None
 
+    #neural networks things
+    reward: float = 0.0
+
     # -----------------------------------------------------------------
     # Main update
     # -----------------------------------------------------------------
 
     def update(self, world):
+        previous_hunger = self.hunger
+        previous_energy = self.energy
+        previous_health = self.health
+
         if not self.alive:
             return
 
@@ -284,6 +295,11 @@ class Monkey:
 
         self.apply_environmental_risk(world)
         self._update_survival()
+        self.reward = self._calculate_reward(
+            previous_health,
+            previous_energy,
+            previous_hunger,
+        )
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
@@ -1223,6 +1239,25 @@ class Monkey:
             return False
 
 
+
+    # -----------------------------------------------------------------
+    # Reward Pathways
+    # -----------------------------------------------------------------
+    
+    def _calculate_reward(self, previous_health, previous_energy, previous_hunger):
+        hunger_change = previous_hunger - self.hunger
+        health_change = self.health - previous_health
+        energy_change = self.energy - previous_energy
+
+        reward = (
+            hunger_change * HUNGER_REWARD_WEIGHT
+            + health_change * HEALTH_REWARD_WEIGHT
+            + energy_change * ENERGY_REWARD_WEIGHT
+        )
+
+        return reward
+
+
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
@@ -1277,4 +1312,5 @@ class Monkey:
                 }
                 for item in self.held_items
             ],
+            "reward": round(self.reward, 2),
         }
