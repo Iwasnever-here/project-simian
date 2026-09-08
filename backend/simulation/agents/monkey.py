@@ -4,6 +4,7 @@ import random
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
 from .touristItem import TouristItem
+from .experience import Experience
 
 
 # ---------------------------------------------------------------------
@@ -16,11 +17,19 @@ EATING_STATE = "eating"
 SLEEPING_STATE = "sleeping"
 SEEKING_SHELTER_STATE = "seeking_shelter"
 FOLLOW_MOTHER_STATE = "following_mother"
-APPROACHING_MONEKY_STATE = "approaching_monkey"
+APPROACHING_MONKEY_STATE = "approaching_monkey"
 AVOIDING_MONKEY_STATE = "avoiding_monkey"
 FOLLOWING_MONKEY_STATE = "following_monkey"
 CONFRONTING_MONKEY_STATE = "confronting_monkey"
 SOCIAL_IDLE_STATE = "socializing"
+
+TOURIST_ACTIONS = [
+    "watch",
+    "follow",
+    "scare",
+    "grab_item",
+    "leave",
+]
 
 
 # ---------------------------------------------------------------------
@@ -149,6 +158,10 @@ TOURIST_INTERACTION_COOLDOWN_TICKS = 30
 HUNGER_REWARD_WEIGHT = 1.0
 ENERGY_REWARD_WEIGHT = 0.1
 HEALTH_REWARD_WEIGHT = 1.0
+
+MAX_EXPERIENCES = 1000
+
+
 @dataclass
 class Monkey:
     id: int
@@ -205,6 +218,12 @@ class Monkey:
 
     #neural networks things
     reward: float = 0.0
+    experiences: list[Experience] = field(default_factory=list)
+    pending_tourist_state: list[float] | None = None
+    pending_tourist_action: int | None = None
+    pending_tourist_id: int | None = None
+    pending_tourist_reward: float = 0.0
+    pending_tourist_done: bool = False
 
     # -----------------------------------------------------------------
     # Main update
@@ -270,6 +289,8 @@ class Monkey:
 
                     if tourist is None:
                         self.state = "investigating_tourist"
+                        self.current_tourist_action = None
+                        self.pending_tourist_done = True
 
                     else:
                         self._handle_tourist_interactions(
@@ -300,6 +321,12 @@ class Monkey:
             previous_energy,
             previous_hunger,
         )
+
+        if self.pending_tourist_state is not None:
+            self.pending_tourist_reward += self.reward
+
+        if self.pending_tourist_done:
+            self._finalize_tourist_experience(world)
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
@@ -912,7 +939,7 @@ class Monkey:
 
         if distance > desired + SOCIAL_DISTANCE_HYSTERESIS:
             self.state = (
-                APPROACHING_MONEKY_STATE
+                APPROACHING_MONKEY_STATE
                 if self.sociability >= 0.7
                 else FOLLOWING_MONKEY_STATE
             )
@@ -1112,6 +1139,8 @@ class Monkey:
         if self._is_at_target():
             self.clear_target()
             self.state = WANDER_STATE
+            self.current_tourist_action = None
+            self.pending_tourist_done = True
 
             return False
 
@@ -1126,6 +1155,14 @@ class Monkey:
         if self.current_tourist_action is None:
             self.current_tourist_action = self._choose_tourist_action(tourist)
 
+            self.pending_tourist_state = self._get_tourist_state(tourist)
+            self.pending_tourist_action = self._encode_tourist_action(
+                self.current_tourist_action
+            )
+            self.pending_tourist_id = tourist.id
+            self.pending_tourist_reward = 0.0
+            self.pending_tourist_done = False
+
         return self._execute_tourist_action(
             world,
             tourist,
@@ -1137,10 +1174,14 @@ class Monkey:
             self.tourist_interaction_ticks -= 1
 
         if self.tourist_interaction_ticks <= 0:
+            self.pending_tourist_done = True
+
             self.state = WANDER_STATE
             self.current_tourist_action = None
+            self.pending_tourist_done = True
             self.tourist_interaction_cooldown = TOURIST_INTERACTION_COOLDOWN_TICKS
             self.clear_target()
+
             return False
 
         return True
@@ -1218,6 +1259,8 @@ class Monkey:
 
             self.last_tourist_action_success = success
 
+            self.pending_tourist_done = True
+
             self.current_tourist_action = None
             self.tourist_interaction_ticks = 0
             self.tourist_interaction_cooldown = (
@@ -1235,8 +1278,30 @@ class Monkey:
                 TOURIST_INTERACTION_COOLDOWN_TICKS
             )
             self.clear_target()
+
+            self.pending_tourist_done = True
+
             self.last_tourist_action_success = True
             return False
+
+
+    def _get_tourist_state(self, tourist):
+        distance = self._chebyshev_distance(
+            tourist.x,
+            tourist.y,
+        )
+        return [
+            self.hunger / MAX_HUNGER,
+            self.energy / MAX_ENERGY,
+            self.health / MAX_HEALTH,
+
+            self.boldness,
+            self.curiosity,
+            self.aggression,
+
+            min(distance, VISION_RANGE) / VISION_RANGE,
+            min(len(tourist.items), 5) / 5.0,
+        ]
 
 
 
@@ -1256,6 +1321,43 @@ class Monkey:
         )
 
         return reward
+
+    def _encode_tourist_action(self, action):
+        return TOURIST_ACTIONS.index(action)
+
+
+    def _finalize_tourist_experience(self, world):
+        if (
+            self.pending_tourist_state is None
+            or self.pending_tourist_action is None
+            or self.pending_tourist_id is None
+        ):
+            return
+
+        tourist = world.get_tourist(self.pending_tourist_id)
+
+        if tourist is not None:
+            next_state = self._get_tourist_state(tourist)
+        else:
+            next_state = self.pending_tourist_state.copy()
+
+        experience = Experience(
+            state=self.pending_tourist_state,
+            action=self.pending_tourist_action,
+            reward=self.pending_tourist_reward,
+            next_state=next_state,
+        )
+
+        self.experiences.append(experience)
+
+        if len(self.experiences) > MAX_EXPERIENCES:
+            self.experiences.pop(0)
+
+        self.pending_tourist_state = None
+        self.pending_tourist_action = None
+        self.pending_tourist_id = None
+        self.pending_tourist_reward = 0.0
+        self.pending_tourist_done = False
 
 
     # -----------------------------------------------------------------
