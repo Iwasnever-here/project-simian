@@ -1285,23 +1285,7 @@ class Monkey:
             return False
 
 
-    def _get_tourist_state(self, tourist):
-        distance = self._chebyshev_distance(
-            tourist.x,
-            tourist.y,
-        )
-        return [
-            self.hunger / MAX_HUNGER,
-            self.energy / MAX_ENERGY,
-            self.health / MAX_HEALTH,
 
-            self.boldness,
-            self.curiosity,
-            self.aggression,
-
-            min(distance, VISION_RANGE) / VISION_RANGE,
-            min(len(tourist.items), 5) / 5.0,
-        ]
 
 
 
@@ -1359,7 +1343,133 @@ class Monkey:
         self.pending_tourist_reward = 0.0
         self.pending_tourist_done = False
 
+    def _get_brain_state(self, world):
+        visible_food = world.get_visible_fruit_trees(
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
 
+        visible_monkeys = world.get_visible_monkeys(
+            self.id,
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+
+        visible_tourists = world.get_visible_tourists(
+            self.x,
+            self.y,
+            VISION_RANGE,
+        )
+
+        # food stuff here
+        if visible_food:
+            nearest_food = min(
+                visible_food,
+                key= lambda tree: self._chebyshev_distance(tree.x, tree.y)
+            )
+
+            food_distance = self._chebyshev_distance(
+                nearest_food.x,
+                nearest_food.y,
+            )
+
+            food_visible = 1.0
+            food_distance_normalized = min(food_distance, VISION_RANGE) / VISION_RANGE
+        else:
+            food_visible = 0.0
+            food_distance_normalized = 1.0
+
+
+        # monkey stuff here
+        if visible_monkeys:
+            nearest_monkey = min(
+                visible_monkeys,
+                key= lambda monkey: self._chebyshev_distance(monkey.x, monkey.y)
+            )
+
+            monkey_distance = self._chebyshev_distance(
+                nearest_monkey.x,
+                nearest_monkey.y,
+            )
+
+            monkey_visible = 1.0
+            monkey_distance_normalized = min(monkey_distance, VISION_RANGE) / VISION_RANGE
+        else:
+            monkey_visible = 0.0
+            monkey_distance_normalized = 1.0
+
+        # tourist stuff here
+        if visible_tourists:
+            nearest_tourist = min(
+                visible_tourists,
+                key=lambda tourist: self._chebyshev_distance(
+                    tourist.x,
+                    tourist.y,
+                ),
+            )
+
+            tourist_distance = self._chebyshev_distance(
+                nearest_tourist.x,
+                nearest_tourist.y,
+            )
+
+            tourist_visible = 1.0
+            tourist_distance_normalized = min(
+                tourist_distance,
+                VISION_RANGE,
+            ) / VISION_RANGE
+
+            tourist_has_items = (
+                1.0
+                if nearest_tourist.items
+                else 0.0
+            )
+
+        else:
+            tourist_visible = 0.0
+            tourist_distance_normalized = 1.0
+            tourist_has_items = 0.0
+
+        # now the rest
+
+     
+        return [
+            # Survival
+            self.hunger / MAX_HUNGER,
+            self.energy / MAX_ENERGY,
+            self.health / MAX_HEALTH,
+
+            # Genetic traits
+            self.boldness,
+            self.curiosity,
+            self.sociability,
+            self.memory,
+            self.aggression,
+
+            # Life stage
+            self.get_maturity_mod(),
+
+            # Time
+            1.0 if world.is_daytime() else 0.0,
+
+            # Food
+            food_visible,
+            food_distance_normalized,
+
+            # Other monkeys
+            monkey_visible,
+            monkey_distance_normalized,
+
+            # Tourists
+            tourist_visible,
+            tourist_distance_normalized,
+            tourist_has_items,
+
+            # Inventory
+            1.0 if self.held_items else 0.0,
+        ]
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------

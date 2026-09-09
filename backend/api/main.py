@@ -225,3 +225,19 @@ def get_simulation_status():
         "total": world.total_monkeys_created,
         "deaths": world.total_monkeys_created - alive,
     }
+
+
+@app.get("/monkeys/{monkey_id}/brain-state")
+def get_monkey_brain_state(monkey_id: int):
+    monkey = world.get_monkey(monkey_id)
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Monkey not found",
+        )
+
+    return {
+        "monkey_id": monkey.id,
+        "brain_state": monkey._get_brain_state(world),
+    }
