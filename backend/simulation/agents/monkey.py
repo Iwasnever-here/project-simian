@@ -1285,9 +1285,24 @@ class Monkey:
             return False
 
 
+    def _get_tourist_state(self, tourist):
+        distance = self._chebyshev_distance(
+            tourist.x,
+            tourist.y,
+        )
 
+        return [
+            self.hunger / MAX_HUNGER,
+            self.energy / MAX_ENERGY,
+            self.health / MAX_HEALTH,
 
+            self.boldness,
+            self.curiosity,
+            self.aggression,
 
+            min(distance, VISION_RANGE) / VISION_RANGE,
+            min(len(tourist.items), 5) / 5.0,
+        ]
 
     # -----------------------------------------------------------------
     # Reward Pathways
@@ -1308,7 +1323,6 @@ class Monkey:
 
     def _encode_tourist_action(self, action):
         return TOURIST_ACTIONS.index(action)
-
 
     def _finalize_tourist_experience(self, world):
         if (
@@ -1470,6 +1484,7 @@ class Monkey:
             # Inventory
             1.0 if self.held_items else 0.0,
         ]
+
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
