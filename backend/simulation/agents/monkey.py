@@ -31,6 +31,24 @@ TOURIST_ACTIONS = [
     "leave",
 ]
 
+MONKEY_ACTIONS = [
+    "wander",
+    "seek_food",
+    "seek_shelter",
+    "follow_mother",
+    "approach_monkey",
+    "avoid_monkey",
+    "follow_monkey",
+    "confront_monkey",
+    "socialise",
+    "investigate_tourist",
+    "watch_tourist",
+    "follow_tourist",
+    "scare_tourist",
+    "grab_item",
+    "leave_tourist",
+]
+
 
 # ---------------------------------------------------------------------
 # Hunger and food
@@ -1303,6 +1321,33 @@ class Monkey:
             min(distance, VISION_RANGE) / VISION_RANGE,
             min(len(tourist.items), 5) / 5.0,
         ]
+    
+    def _get_valid_actions(self, world):
+        valid_actions = ["wander"]
+
+        visible_food = world.get_visible_fruit_trees(self.x, self.y, VISION_RANGE)
+        if visible_food:
+            valid_actions.append("seek_food")
+
+        if self.should_follow_mother():
+            valid_actions.append("follow_mother")
+
+        if self.energy <= SLEEP_ENERGY_THRESHOLD:
+            valid_actions.append("seek_shelter")
+
+        visible_monkeys = world.get_visible_monkeys(self.id, self.x, self.y, VISION_RANGE)
+        if visible_monkeys:
+            valid_actions.extend(["approach_monkey", "avoid_monkey", "confront_monkey", "socialise"])
+
+        visible_tourists = world.get_visible_tourists(self.x, self.y, VISION_RANGE)
+        if visible_tourists:
+            valid_actions.extend(["investigate_tourist", "watch_tourist", "follow_tourist", "scare_tourist"])
+
+            if any(tourist.items for tourist in visible_tourists):
+                valid_actions.append("grab_item")
+
+
+        return valid_actions
 
     # -----------------------------------------------------------------
     # Reward Pathways
@@ -1323,6 +1368,9 @@ class Monkey:
 
     def _encode_tourist_action(self, action):
         return TOURIST_ACTIONS.index(action)
+
+    def _encode_monkey_action(self, action):
+        return MONKEY_ACTIONS.index(action)
 
     def _finalize_tourist_experience(self, world):
         if (
