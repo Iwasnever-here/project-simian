@@ -241,3 +241,20 @@ def get_monkey_brain_state(monkey_id: int):
         "monkey_id": monkey.id,
         "brain_state": monkey._get_brain_state(world),
     }
+
+@app.get("/monkeys/{monkey_id}/brain-output")
+def get_monkey_brain_output(monkey_id: int):
+    monkey = world.get_monkey(monkey_id)
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Monkey not found",
+        )
+
+    outputs = monkey._get_brain_output(world)
+
+    return {
+        "monkey_id": monkey.id,
+        "outputs": outputs.tolist(),
+    }

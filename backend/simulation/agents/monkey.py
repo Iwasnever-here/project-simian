@@ -1,11 +1,13 @@
 from dataclasses import dataclass, field
 import random
+import torch
 
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
 from .touristItem import TouristItem
 from .experience import Experience
 
+from backend.simulation.learning.monkeyBrain import MonkeyBrain
 
 # ---------------------------------------------------------------------
 # Monkey states
@@ -242,6 +244,11 @@ class Monkey:
     pending_tourist_id: int | None = None
     pending_tourist_reward: float = 0.0
     pending_tourist_done: bool = False
+
+    brain: MonkeyBrain = field(default_factory = lambda: MonkeyBrain(
+        input_size = 18,
+        output_size = len(MONKEY_ACTIONS)
+    ))
 
     # -----------------------------------------------------------------
     # Main update
@@ -1532,6 +1539,18 @@ class Monkey:
             # Inventory
             1.0 if self.held_items else 0.0,
         ]
+
+    def _get_brain_output(self, world):
+        state = self._get_brain_state(world)
+
+        state_tensor = torch.tensor(
+            state,
+            dtype=torch.float32
+        )
+        with torch.no_grad():
+            outputs = self.brain(state_tensor)
+
+        return outputs
 
     # -----------------------------------------------------------------
     # API representation
