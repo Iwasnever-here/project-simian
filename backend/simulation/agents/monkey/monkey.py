@@ -93,6 +93,16 @@ from backend.simulation.agents.monkey.monkey_tourists import (
     get_tourist_state,
 )
 
+from backend.simulation.agents.monkey.monkey_social import (
+    observe_monkeys,
+    choose_social_target,
+    desired_social_distance,
+    handle_social_interaction,
+    step_away_from,
+    flee_from,
+    confront,
+)
+
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
 from ..touristItem import TouristItem
@@ -819,142 +829,28 @@ class Monkey:
     # -----------------------------------------------------------------
 
     def _observe_monkeys(self, world):
-        visible_monkeys = world.get_visible_monkeys(
-            self.id,
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-        for other in visible_monkeys:
-            self.social_memory.remember(
-                other.id,
-                other.x,
-                other.y,
-                world.total_tick,
-            )
-        return visible_monkeys
+        return observe_monkeys(self, world)
 
     def _chebyshev_distance(self, x, y):
         return max(abs(self.x - x), abs(self.y - y))
 
     def _choose_social_target(self, visible_monkeys, current_tick):
-        # Prefer someone this monkey actually recognizes over a random
-        # stranger, so the `memory` trait has a real effect on who
-        # gets interacted with.
-        known_recent = [
-            m for m in visible_monkeys
-            if (record := self.social_memory.get(m.id)) is not None
-            and current_tick - record.last_seen_tick <= SOCIAL_MEMORY_RECENCY_TICKS
-        ]
-
-        candidates = known_recent if known_recent else visible_monkeys
-
-        return min(
-            candidates,
-            key=lambda m: self._chebyshev_distance(m.x, m.y),
-        )
+        return choose_social_target(self, visible_monkeys, current_tick)
 
     def _desired_social_distance(self, other):
-        base = MIN_SOCIAL_DISTANCE + (
-            1.0 - self.sociability
-        ) * (
-            MAX_SOCIAL_DISTANCE
-            - MIN_SOCIAL_DISTANCE
-        )
-
-        threat = other.aggression
-        confidence = self.aggression
-
-        base += threat * 1.5
-        base -= confidence * 1.5
-
-        return max(
-            MIN_SOCIAL_DISTANCE,
-            min(MAX_SOCIAL_DISTANCE, base),
-        )
+        return desired_social_distance(self, other)
 
     def _handle_social_interaction(self, world, visible_monkeys):
-        if not visible_monkeys:
-            return False
-
-        other = self._choose_social_target(visible_monkeys, world.total_tick)
-        distance = self._chebyshev_distance(other.x, other.y)
-
-        aggression_gap = other.aggression - self.aggression
-
-        # Fear overrides sociability: a much less aggressive monkey
-        # flees a much more aggressive one on sight.
-        if aggression_gap >= AGGRESSION_DOMINANCE_THRESHOLD:
-            self._flee_from(world, other)
-            return True
-
-        # Dominance: a much more aggressive monkey closes in to
-        # intimidate, regardless of how sociable it is.
-        if -aggression_gap >= AGGRESSION_DOMINANCE_THRESHOLD:
-            self._confront(world, other)
-            return True
-
-        # Otherwise, converge on a comfortable equilibrium distance
-        # rather than re-deciding a fresh behavior every single tick.
-        same_target = self.target_monkey_id == other.id
-
-        if same_target and self.social_decision_cooldown > 0:
-            self.social_decision_cooldown -= 1
-        else:
-            self.target_monkey_id = other.id
-            self.social_decision_cooldown = SOCIAL_DECISION_TICKS
-
-        desired = self._desired_social_distance(other)
-
-        if distance > desired + SOCIAL_DISTANCE_HYSTERESIS:
-            self.state = (
-                APPROACHING_MONKEY_STATE
-                if self.sociability >= 0.7
-                else FOLLOWING_MONKEY_STATE
-            )
-            self._clear_movement_target()
-            self.set_target(world, other.x, other.y)
-            self._move_toward_target(world)
-
-        elif distance < desired - SOCIAL_DISTANCE_HYSTERESIS:
-            self._flee_from(world, other)
-
-        else:
-            self.state = SOCIAL_IDLE_STATE
-            self._clear_movement_target()
-
-        return True
+        return handle_social_interaction(self, world, visible_monkeys)
 
     def _step_away_from(self, world, other):
-        dx = self.x - other.x
-        dy = self.y - other.y
-
-        step_x = (dx > 0) - (dx < 0)
-        step_y = (dy > 0) - (dy < 0)
-
-        if self.move(world, self.x + step_x, self.y + step_y):
-            return
-
-        self._wander(world)
+        step_away_from(self, world, other)
 
     def _flee_from(self, world, other):
-        self.state = AVOIDING_MONKEY_STATE
-        self.target_monkey_id = other.id
-        self._clear_movement_target()
-
-        self._step_away_from(world, other)
+        flee_from(self, world, other)
 
     def _confront(self, world, other):
-        self.state = CONFRONTING_MONKEY_STATE
-        self.target_monkey_id = other.id
-
-        if self._chebyshev_distance(other.x, other.y) <= MIN_SOCIAL_DISTANCE:
-            self._clear_movement_target()
-            return
-
-        self._clear_movement_target()
-        self.set_target(world, other.x, other.y)
-        self._move_toward_target(world)
+        confront(self, world, other)
 
     # -----------------------------------------------------------------
     # Monkey Behavior and Interaction
