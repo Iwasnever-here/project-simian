@@ -1,24 +1,26 @@
 import heapq
 import random
 import threading
-
 import opensimplex
 
 from backend.simulation.agents import tourists
-from backend.simulation.agents.monkey import REPRODUCTION_RANGE
-from backend.simulation.agents.monkey import MAX_HEALTH, Monkey, random_trait
+from backend.simulation.agents.monkey.monkey import (
+    Monkey,
+    random_trait,
+    inherit_trait,
+)
+
+from backend.simulation.agents.monkey.monkey_constants import (
+    REPRODUCTION_RANGE,
+    REPRODUCTION_ENERGY_COST,
+    MAX_HEALTH,
+)
+
 from backend.simulation.agents.touristItem import generate_tourist_items
-from backend.simulation.names import generate_monkey_identity
-from backend.simulation.world.tile import Tile
-from backend.simulation.world.tree import Tree
-from backend.simulation.agents.monkey import inherit_trait
-from backend.simulation.agents.monkey import REPRODUCTION_ENERGY_COST, Monkey, random_trait
-from backend.simulation.names import generate_monkey_identity
-from backend.simulation.world.tile import Tile
-from backend.simulation.world.tree import Tree
 from backend.simulation.agents.tourists import Tourist
-
-
+from backend.simulation.names import generate_monkey_identity
+from backend.simulation.world.tile import Tile
+from backend.simulation.world.tree import Tree
 # ---------------------------------------------------------------------
 # Chunk settings
 # ---------------------------------------------------------------------

@@ -1,126 +1,92 @@
 from dataclasses import dataclass, field
 import random
-import torch
+
+
+from backend.simulation.agents.monkey.monkey_learning import (
+    get_valid_actions,
+    calculate_reward,
+    encode_tourist_action,
+    encode_monkey_action,
+    finalize_tourist_experience,
+    get_brain_state,
+    get_brain_output,
+)
+
+from backend.simulation.agents.monkey.monkey_constants import (
+    WANDER_STATE,
+    SEEKING_FOOD_STATE,
+    EATING_STATE,
+    SLEEPING_STATE,
+    SEEKING_SHELTER_STATE,
+    FOLLOW_MOTHER_STATE,
+    APPROACHING_MONKEY_STATE,
+    AVOIDING_MONKEY_STATE,
+    FOLLOWING_MONKEY_STATE,
+    CONFRONTING_MONKEY_STATE,
+    SOCIAL_IDLE_STATE,
+
+    MONKEY_ACTIONS,
+
+    HUNGER_PER_TICK,
+    FOOD_SEEK_THRESHOLD,
+    MAX_HUNGER,
+    FRUIT_HUNGER_REDUCTION,
+    MAX_FOOD_MEMORIES,
+    FOOD_MEMORY_COOLDOWN_TICKS,
+
+    SLEEP_ENERGY_THRESHOLD,
+    WAKE_ENERGY_THRESHOLD,
+    MAX_ENERGY,
+    SLEEP_ENERGY_RECOVERY,
+    MOVEMENT_COST,
+    IDLE_COST,
+
+    MAX_STARVING_TICK,
+    MAX_EXHAUSTED_TICK,
+    MAX_AGE_DAYS,
+    DAY_SLEEP_RISK,
+    NIGHT_SLEEP_RISK,
+    DAY_IDLE_RISK,
+    NIGHT_IDLE_RISK,
+    MOVING_RISK,
+    RISK_ENERGY_COST,
+    MAX_HEALTH,
+    STARVATION_DAMAGE,
+    EXHAUST_DAMAGE,
+
+    INFANT_MAX_AGE,
+    JUVENILE_MAX_AGE,
+    ELDERLY_MIN_AGE,
+    MIN_REPRODUCTION_ENERGY,
+    MIN_REPRODUCTION_HEALTH,
+    REPRODUCTION_COOLDOWN_TICKS,
+
+    TRAIT_MUTATION_STDDEV,
+
+    MIN_TRAIT_VALUE,
+    MAX_TRAIT_VALUE,
+
+    VISION_RANGE,
+    MOVEMENT_DIRECTIONS,
+    MOTHER_FOLLOW_DISTANCE,
+
+    MIN_SOCIAL_DISTANCE,
+    MAX_SOCIAL_DISTANCE,
+    SOCIAL_DISTANCE_HYSTERESIS,
+    SOCIAL_DECISION_TICKS,
+    SOCIAL_MEMORY_RECENCY_TICKS,
+    AGGRESSION_DOMINANCE_THRESHOLD,
+    TOURIST_INTERACTION_DURATION,
+    TOURIST_INTERACTION_COOLDOWN_TICKS,
+)
 
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
-from .touristItem import TouristItem
-from .experience import Experience
+from ..touristItem import TouristItem
+from ..experience import Experience
 
 from backend.simulation.learning.monkeyBrain import MonkeyBrain
 
-# ---------------------------------------------------------------------
-# Monkey states
-# ---------------------------------------------------------------------
-
-WANDER_STATE = "wandering"
-SEEKING_FOOD_STATE = "seeking_food"
-EATING_STATE = "eating"
-SLEEPING_STATE = "sleeping"
-SEEKING_SHELTER_STATE = "seeking_shelter"
-FOLLOW_MOTHER_STATE = "following_mother"
-APPROACHING_MONKEY_STATE = "approaching_monkey"
-AVOIDING_MONKEY_STATE = "avoiding_monkey"
-FOLLOWING_MONKEY_STATE = "following_monkey"
-CONFRONTING_MONKEY_STATE = "confronting_monkey"
-SOCIAL_IDLE_STATE = "socializing"
-
-TOURIST_ACTIONS = [
-    "watch",
-    "follow",
-    "scare",
-    "grab_item",
-    "leave",
-]
-
-MONKEY_ACTIONS = [
-    "wander",
-    "seek_food",
-    "seek_shelter",
-    "follow_mother",
-    "approach_monkey",
-    "avoid_monkey",
-    "follow_monkey",
-    "confront_monkey",
-    "socialise",
-    "investigate_tourist",
-    "watch_tourist",
-    "follow_tourist",
-    "scare_tourist",
-    "grab_item",
-    "leave_tourist",
-]
-
-
-# ---------------------------------------------------------------------
-# Hunger and food
-# ---------------------------------------------------------------------
-
-HUNGER_PER_TICK = 0.5
-FOOD_SEEK_THRESHOLD = 60.0
-MAX_HUNGER = 100.0
-
-FRUIT_HUNGER_REDUCTION = 25.0
-
-MAX_FOOD_MEMORIES = 4
-FOOD_MEMORY_COOLDOWN_TICKS = 20
-
-
-# ---------------------------------------------------------------------
-# Energy and sleep
-# ---------------------------------------------------------------------
-
-SLEEP_ENERGY_THRESHOLD = 30.0
-WAKE_ENERGY_THRESHOLD = 80.0
-MAX_ENERGY = 100.0
-SLEEP_ENERGY_RECOVERY = 1.0
-
-MOVEMENT_COST = 0.25
-IDLE_COST = 0.05
-
-
-# ---------------------------------------------------------------------
-# Survival and risk
-# ---------------------------------------------------------------------
-
-MAX_STARVING_TICK = 10
-MAX_EXHAUSTED_TICK = 10
-MAX_AGE_DAYS = 3650
-
-DAY_SLEEP_RISK = 0.005
-NIGHT_SLEEP_RISK = 0.0005
-DAY_IDLE_RISK = 0.001
-NIGHT_IDLE_RISK = 0.0005
-MOVING_RISK = 0.0003
-RISK_ENERGY_COST = 5.0
-
-MAX_HEALTH = 100.0
-STARVATION_DAMAGE = 2.0
-EXHAUST_DAMAGE = 1.0
-
-
-# ---------------------------------------------------------------------
-# Life stages
-# ---------------------------------------------------------------------
-
-INFANT_MAX_AGE = 50
-JUVENILE_MAX_AGE = 100
-ELDERLY_MIN_AGE = 300
-
-MIN_REPRODUCTION_ENERGY = 50.0
-MIN_REPRODUCTION_HEALTH = 50.0
-REPRODUCTION_COOLDOWN_TICKS = 1000
-REPRODUCTION_ENERGY_COST = 20.0
-REPRODUCTION_RANGE = 1
-TRAIT_MUTATION_STDDEV = 0.05
-
-
-# ---------------------------------------------------------------------
-# Traits
-# ---------------------------------------------------------------------
-
-MIN_TRAIT_VALUE = 0.0
-MAX_TRAIT_VALUE = 1.0
 
 
 def random_trait() -> float:
@@ -146,41 +112,6 @@ def inherit_trait(parent_a_trait: float, parent_b_trait: float) -> float:
 # ---------------------------------------------------------------------
 # Vision and movement
 # ---------------------------------------------------------------------
-
-VISION_RANGE = 5
-
-MOVEMENT_DIRECTIONS = [
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-    (1, 1),
-    (1, -1),
-    (-1, 1),
-    (-1, -1),
-]
-
-MOTHER_FOLLOW_DISTANCE = 2
-
-# Social spacing: instead of fixed "approach vs avoid" cutoffs, monkeys
-# converge on a desired distance derived from sociability/aggression,
-# with a hysteresis band so they settle instead of oscillating.
-MIN_SOCIAL_DISTANCE = 1
-MAX_SOCIAL_DISTANCE = 4
-SOCIAL_DISTANCE_HYSTERESIS = 1
-SOCIAL_DECISION_TICKS = 15
-SOCIAL_MEMORY_RECENCY_TICKS = 300
-AGGRESSION_DOMINANCE_THRESHOLD = 0.2
-TOURIST_INTERACTION_DURATION = 20
-TOURIST_INTERACTION_COOLDOWN_TICKS = 30
-
-
-HUNGER_REWARD_WEIGHT = 1.0
-ENERGY_REWARD_WEIGHT = 0.1
-HEALTH_REWARD_WEIGHT = 1.0
-
-MAX_EXPERIENCES = 1000
-
 
 @dataclass
 class Monkey:
@@ -1330,227 +1261,34 @@ class Monkey:
         ]
     
     def _get_valid_actions(self, world):
-        valid_actions = ["wander"]
-
-        visible_food = world.get_visible_fruit_trees(self.x, self.y, VISION_RANGE)
-        if visible_food:
-            valid_actions.append("seek_food")
-
-        if self.should_follow_mother():
-            valid_actions.append("follow_mother")
-
-        if self.energy <= SLEEP_ENERGY_THRESHOLD:
-            valid_actions.append("seek_shelter")
-
-        visible_monkeys = world.get_visible_monkeys(self.id, self.x, self.y, VISION_RANGE)
-        if visible_monkeys:
-            valid_actions.extend(["approach_monkey", "avoid_monkey", "confront_monkey", "socialise"])
-
-        visible_tourists = world.get_visible_tourists(self.x, self.y, VISION_RANGE)
-        if visible_tourists:
-            valid_actions.extend(["investigate_tourist", "watch_tourist", "follow_tourist", "scare_tourist"])
-
-            if any(tourist.items for tourist in visible_tourists):
-                valid_actions.append("grab_item")
-
-
-        return valid_actions
+        return get_valid_actions(self, world)
 
     # -----------------------------------------------------------------
     # Reward Pathways
     # -----------------------------------------------------------------
     
     def _calculate_reward(self, previous_health, previous_energy, previous_hunger):
-        hunger_change = previous_hunger - self.hunger
-        health_change = self.health - previous_health
-        energy_change = self.energy - previous_energy
-
-        reward = (
-            hunger_change * HUNGER_REWARD_WEIGHT
-            + health_change * HEALTH_REWARD_WEIGHT
-            + energy_change * ENERGY_REWARD_WEIGHT
+        return calculate_reward(
+            self,
+            previous_health,
+            previous_energy,
+            previous_hunger,
         )
-
-        return reward
 
     def _encode_tourist_action(self, action):
-        return TOURIST_ACTIONS.index(action)
-
+        return encode_tourist_action(action)
+    
     def _encode_monkey_action(self, action):
-        return MONKEY_ACTIONS.index(action)
+        return encode_monkey_action(action)
 
     def _finalize_tourist_experience(self, world):
-        if (
-            self.pending_tourist_state is None
-            or self.pending_tourist_action is None
-            or self.pending_tourist_id is None
-        ):
-            return
-
-        tourist = world.get_tourist(self.pending_tourist_id)
-
-        if tourist is not None:
-            next_state = self._get_tourist_state(tourist)
-        else:
-            next_state = self.pending_tourist_state.copy()
-
-        experience = Experience(
-            state=self.pending_tourist_state,
-            action=self.pending_tourist_action,
-            reward=self.pending_tourist_reward,
-            next_state=next_state,
-        )
-
-        self.experiences.append(experience)
-
-        if len(self.experiences) > MAX_EXPERIENCES:
-            self.experiences.pop(0)
-
-        self.pending_tourist_state = None
-        self.pending_tourist_action = None
-        self.pending_tourist_id = None
-        self.pending_tourist_reward = 0.0
-        self.pending_tourist_done = False
+        return finalize_tourist_experience(self, world)
 
     def _get_brain_state(self, world):
-        visible_food = world.get_visible_fruit_trees(
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-
-        visible_monkeys = world.get_visible_monkeys(
-            self.id,
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-
-        visible_tourists = world.get_visible_tourists(
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-
-        # food stuff here
-        if visible_food:
-            nearest_food = min(
-                visible_food,
-                key= lambda tree: self._chebyshev_distance(tree.x, tree.y)
-            )
-
-            food_distance = self._chebyshev_distance(
-                nearest_food.x,
-                nearest_food.y,
-            )
-
-            food_visible = 1.0
-            food_distance_normalized = min(food_distance, VISION_RANGE) / VISION_RANGE
-        else:
-            food_visible = 0.0
-            food_distance_normalized = 1.0
-
-
-        # monkey stuff here
-        if visible_monkeys:
-            nearest_monkey = min(
-                visible_monkeys,
-                key= lambda monkey: self._chebyshev_distance(monkey.x, monkey.y)
-            )
-
-            monkey_distance = self._chebyshev_distance(
-                nearest_monkey.x,
-                nearest_monkey.y,
-            )
-
-            monkey_visible = 1.0
-            monkey_distance_normalized = min(monkey_distance, VISION_RANGE) / VISION_RANGE
-        else:
-            monkey_visible = 0.0
-            monkey_distance_normalized = 1.0
-
-        # tourist stuff here
-        if visible_tourists:
-            nearest_tourist = min(
-                visible_tourists,
-                key=lambda tourist: self._chebyshev_distance(
-                    tourist.x,
-                    tourist.y,
-                ),
-            )
-
-            tourist_distance = self._chebyshev_distance(
-                nearest_tourist.x,
-                nearest_tourist.y,
-            )
-
-            tourist_visible = 1.0
-            tourist_distance_normalized = min(
-                tourist_distance,
-                VISION_RANGE,
-            ) / VISION_RANGE
-
-            tourist_has_items = (
-                1.0
-                if nearest_tourist.items
-                else 0.0
-            )
-
-        else:
-            tourist_visible = 0.0
-            tourist_distance_normalized = 1.0
-            tourist_has_items = 0.0
-
-        # now the rest
-
-     
-        return [
-            # Survival
-            self.hunger / MAX_HUNGER,
-            self.energy / MAX_ENERGY,
-            self.health / MAX_HEALTH,
-
-            # Genetic traits
-            self.boldness,
-            self.curiosity,
-            self.sociability,
-            self.memory,
-            self.aggression,
-
-            # Life stage
-            self.get_maturity_mod(),
-
-            # Time
-            1.0 if world.is_daytime() else 0.0,
-
-            # Food
-            food_visible,
-            food_distance_normalized,
-
-            # Other monkeys
-            monkey_visible,
-            monkey_distance_normalized,
-
-            # Tourists
-            tourist_visible,
-            tourist_distance_normalized,
-            tourist_has_items,
-
-            # Inventory
-            1.0 if self.held_items else 0.0,
-        ]
+        return get_brain_state(self,world)
 
     def _get_brain_output(self, world):
-        state = self._get_brain_state(world)
-
-        state_tensor = torch.tensor(
-            state,
-            dtype=torch.float32
-        )
-        with torch.no_grad():
-            outputs = self.brain(state_tensor)
-
-        return outputs
+        return get_brain_output(self,world)
 
     # -----------------------------------------------------------------
     # API representation
