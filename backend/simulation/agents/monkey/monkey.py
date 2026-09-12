@@ -80,6 +80,19 @@ from backend.simulation.agents.monkey.monkey_constants import (
     TOURIST_INTERACTION_COOLDOWN_TICKS,
 )
 
+from backend.simulation.agents.monkey.monkey_tourists import (
+    observe_tourists,
+    choose_tourist_to_investigate,
+    handle_tourist_investigation,
+    handle_tourist_interactions,
+    update_tourist_interaction_ticks,
+    update_tourist_interaction_cooldown,
+    grab_item_monkey,
+    choose_tourist_action,
+    execute_tourist_action,
+    get_tourist_state,
+)
+
 from backend.simulation.agents.monkeyMemory import MonkeyMemory
 from backend.simulation.world import world
 from ..touristItem import TouristItem
@@ -948,317 +961,41 @@ class Monkey:
     # -----------------------------------------------------------------
 
     def _observe_tourists(self, world):
-        visible_tourists = world.get_visible_tourists(
-            self.x,
-            self.y,
-            VISION_RANGE,
-        )
-
-        for tourist in visible_tourists:
-            visible_items = [
-                item.name
-                for item in tourist.items
-            ]
-
-            self.social_memory.remember_tourist(
-                tourist.id,
-                tourist.x,
-                tourist.y,
-                world.total_tick,
-                visible_items,
-            )
-
-        return visible_tourists
-
-
+        return observe_tourists(self, world)
 
     def _choose_tourist_to_investigate(self, world):
-        if self.tourist_interaction_cooldown > 0:
-            return None
-        # Keep investigating the current target if the memory is still recent.
-        if self.target_tourist_id is not None:
-            remembered_tourist = self.social_memory.known_tourists.get(
-                self.target_tourist_id
-            )
-
-            if remembered_tourist is not None:
-                if (
-                    remembered_tourist.last_seen_tick
-                    >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
-                    and remembered_tourist.visible_items
-                ):
-                    return remembered_tourist
-
-            self.target_tourist_id = None
-
-        candidates = []
-
-        for remembered_tourist in self.social_memory.known_tourists.values():
-            if remembered_tourist.last_seen_tick is None:
-                continue
-
-            if remembered_tourist.last_seen_tick < (
-                world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
-            ):
-                continue
-
-            if not remembered_tourist.visible_items:
-                continue
-
-            candidates.append(remembered_tourist)
-
-        if not candidates:
-            return None
-
-        chosen = random.choice(candidates)
-
-        self.target_tourist_id = chosen.tourist_id
-
-        return chosen
+        return choose_tourist_to_investigate(self, world)
 
     def _handle_tourist_investigation(
         self,
         world,
         visible_tourists,
     ):
-        remembered_tourist = self._choose_tourist_to_investigate(
-            world
-        )
-
-        if remembered_tourist is None:
-            return False
-
-        self.state = "investigating_tourist"
-        self.target_monkey_id = None
-
-        # Check whether the remembered tourist is currently visible.
-        visible_tourist = next(
-            (
-                tourist
-                for tourist in visible_tourists
-                if tourist.id == remembered_tourist.tourist_id
-            ),
-            None,
-        )
-
-        # -------------------------------------------------------------
-        # Tourist is currently visible
-        # -------------------------------------------------------------
-        if visible_tourist is not None:
-            distance = self._chebyshev_distance(
-                visible_tourist.x,
-                visible_tourist.y,
-            )
-
-            # Close enough to decide how to interact.
-            if distance <= 3:
-                self._clear_movement_target()
-
-                self._handle_tourist_interactions(
-                    world,
-                    visible_tourist,
-                )
-
-                return True
-
-            # Tourist has moved, so follow their current position.
-            if (
-                self.target_x != visible_tourist.x
-                or self.target_y != visible_tourist.y
-            ):
-                self.set_target(
-                    world,
-                    visible_tourist.x,
-                    visible_tourist.y,
-                )
-
-            self._move_toward_target(world)
-
-            return True
-
-        # -------------------------------------------------------------
-        # Tourist is no longer visible
-        # -------------------------------------------------------------
-
-        # Move toward the last place the monkey remembers seeing them.
-        if (
-            self.target_x != remembered_tourist.last_x
-            or self.target_y != remembered_tourist.last_y
-        ):
-            self.set_target(
-                world,
-                remembered_tourist.last_x,
-                remembered_tourist.last_y,
-            )
-
-        # We reached their remembered location and they aren't there.
-        if self._is_at_target():
-            self.clear_target()
-            self.state = WANDER_STATE
-            self.current_tourist_action = None
-            self.pending_tourist_done = True
-
-            return False
-
-        self._move_toward_target(world)
-
-        return True
+        return handle_tourist_investigation(self, world, visible_tourists)
 
     def _handle_tourist_interactions(self, world, tourist):
-        if self.tourist_interaction_ticks == 0:
-            self.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
-
-        if self.current_tourist_action is None:
-            self.current_tourist_action = self._choose_tourist_action(tourist)
-
-            self.pending_tourist_state = self._get_tourist_state(tourist)
-            self.pending_tourist_action = self._encode_tourist_action(
-                self.current_tourist_action
-            )
-            self.pending_tourist_id = tourist.id
-            self.pending_tourist_reward = 0.0
-            self.pending_tourist_done = False
-
-        return self._execute_tourist_action(
-            world,
-            tourist,
-            self.current_tourist_action,
-        )
+        return handle_tourist_interactions(self, world, tourist)
 
     def _update_tourist_interaction_ticks(self):
-        if self.tourist_interaction_ticks > 0:
-            self.tourist_interaction_ticks -= 1
-
-        if self.tourist_interaction_ticks <= 0:
-            self.pending_tourist_done = True
-
-            self.state = WANDER_STATE
-            self.current_tourist_action = None
-            self.pending_tourist_done = True
-            self.tourist_interaction_cooldown = TOURIST_INTERACTION_COOLDOWN_TICKS
-            self.clear_target()
-
-            return False
-
-        return True
+       return update_tourist_interaction_ticks(self)
 
     def _update_tourist_interaction_cooldown(self):
-        if self.tourist_interaction_cooldown > 0:
-            self.tourist_interaction_cooldown -= 1
+       return update_tourist_interaction_cooldown(self)
 
 
     def grab_item(self, world, tourist, item):
-        return world.transfer_item_to_monkey(
-            self,
-            tourist,
-            item,
-        )
+        return grab_item_monkey(self, world, tourist, item)
 
 
     def _choose_tourist_action(self, tourist):
-        actions = [
-            "watch",
-            "follow",
-            "scare",
-            "leave"
-        ]
-
-        if tourist.items:
-            actions.append("grab_item")
-
-        return random.choice(actions)
+        return choose_tourist_action(self, tourist)
 
     def _execute_tourist_action(self, world, tourist, action):
-        self.last_tourist_action = action
-
-        if action == "watch":
-            self.state = "watching_tourist"
-            self._clear_movement_target()
-            self.last_tourist_action_success = True
-            return True
-
-        if action == "follow":
-            self.state = "following_tourist"
-
-            if (
-                self.target_x != tourist.x
-                or self.target_y != tourist.y
-            ):
-                self.set_target(
-                    world,
-                    tourist.x,
-                    tourist.y,
-                )
-
-            self._move_toward_target(world)
-            self.last_tourist_action_success = True
-            return True
-
-        if action == "scare":
-            self.state = "scaring_tourist"
-            self.last_tourist_action_success = True
-            return True
-
-        if action == "grab_item":
-            if not tourist.items:
-                self.last_tourist_action_success = False
-                self.current_tourist_action = None
-                return False
-
-            item = random.choice(tourist.items)
-
-            success = self.grab_item(
-                world,
-                tourist,
-                item,
-            )
-
-            self.last_tourist_action_success = success
-
-            self.pending_tourist_done = True
-
-            self.current_tourist_action = None
-            self.tourist_interaction_ticks = 0
-            self.tourist_interaction_cooldown = (
-                TOURIST_INTERACTION_COOLDOWN_TICKS
-            )
-            self.clear_target()
-
-            return success
-
-        if action == "leave":
-            self.state = WANDER_STATE
-            self.current_tourist_action = None
-            self.tourist_interaction_ticks = 0
-            self.tourist_interaction_cooldown = (
-                TOURIST_INTERACTION_COOLDOWN_TICKS
-            )
-            self.clear_target()
-
-            self.pending_tourist_done = True
-
-            self.last_tourist_action_success = True
-            return False
+        return execute_tourist_action(self, world, tourist, action)
 
 
     def _get_tourist_state(self, tourist):
-        distance = self._chebyshev_distance(
-            tourist.x,
-            tourist.y,
-        )
-
-        return [
-            self.hunger / MAX_HUNGER,
-            self.energy / MAX_ENERGY,
-            self.health / MAX_HEALTH,
-
-            self.boldness,
-            self.curiosity,
-            self.aggression,
-
-            min(distance, VISION_RANGE) / VISION_RANGE,
-            min(len(tourist.items), 5) / 5.0,
-        ]
+        return get_tourist_state(self, tourist)
     
     def _get_valid_actions(self, world):
         return get_valid_actions(self, world)
@@ -1268,12 +1005,7 @@ class Monkey:
     # -----------------------------------------------------------------
     
     def _calculate_reward(self, previous_health, previous_energy, previous_hunger):
-        return calculate_reward(
-            self,
-            previous_health,
-            previous_energy,
-            previous_hunger,
-        )
+        return calculate_reward(self, previous_health, previous_energy, previous_hunger)
 
     def _encode_tourist_action(self, action):
         return encode_tourist_action(action)
