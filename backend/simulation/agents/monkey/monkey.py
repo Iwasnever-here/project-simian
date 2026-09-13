@@ -11,6 +11,7 @@ from backend.simulation.agents.monkey.monkey_learning import (
     get_brain_state,
     get_brain_output,
     choose_brain_action,
+    finalize_brain_experience,
 )
 
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -200,6 +201,9 @@ class Monkey:
     pending_tourist_reward: float = 0.0
     pending_tourist_done: bool = False
 
+    pending_brain_state: list[float] | None = None
+    pending_brain_action: int | None = None
+
     brain: MonkeyBrain = field(default_factory = lambda: MonkeyBrain(
         input_size = 18,
         output_size = len(MONKEY_ACTIONS)
@@ -231,16 +235,27 @@ class Monkey:
 
             visible_monkeys = self._observe_monkeys(world)
             visible_tourists = self._observe_tourists(world)
-            # Food currently has higher priority than sleep.
-            if self.hunger >= FOOD_SEEK_THRESHOLD:
+
+            brain_state = self._get_brain_state(world)
+            brain_action = self._choose_brain_action(world)
+
+            if brain_action == "seek_food":
+                self.pending_brain_state = brain_state
+
+                self.pending_brain_action = (
+                    self._encode_monkey_action(
+                        brain_action
+                    )
+                )
+
                 self._handle_food_seeking(world)
 
-            # Low energy means find somewhere to sleep.
             elif (
                 self.energy <= SLEEP_ENERGY_THRESHOLD
                 or self.state == SEEKING_SHELTER_STATE
             ):
                 self._handle_seeking_shelter(world)
+
             elif (
                 self.should_follow_mother()
                 and self.follow_mother(world)
@@ -257,18 +272,23 @@ class Monkey:
             ):
                 if not self._update_tourist_interaction_ticks():
                     pass
+
                 else:
                     tourist = next(
                         (
                             tourist
                             for tourist in visible_tourists
-                            if tourist.id == self.target_tourist_id
+                            if tourist.id
+                            == self.target_tourist_id
                         ),
                         None,
                     )
 
                     if tourist is None:
-                        self.state = "investigating_tourist"
+                        self.state = (
+                            "investigating_tourist"
+                        )
+
                         self.current_tourist_action = None
                         self.pending_tourist_done = True
 
@@ -283,6 +303,7 @@ class Monkey:
                 visible_tourists,
             ):
                 pass
+
             elif self._handle_social_interaction(
                 world,
                 visible_monkeys,
@@ -291,22 +312,32 @@ class Monkey:
 
             else:
                 self.state = WANDER_STATE
+
                 self.clear_target()
                 self._wander(world)
 
         self.apply_environmental_risk(world)
         self._update_survival()
+
         self.reward = self._calculate_reward(
             previous_health,
             previous_energy,
             previous_hunger,
         )
 
+        self._finalize_brain_experience(
+            world
+        )
+
         if self.pending_tourist_state is not None:
-            self.pending_tourist_reward += self.reward
+            self.pending_tourist_reward += (
+                self.reward
+            )
 
         if self.pending_tourist_done:
-            self._finalize_tourist_experience(world)
+            self._finalize_tourist_experience(
+                world
+            )
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
@@ -921,6 +952,14 @@ class Monkey:
 
     def _choose_brain_action(self, world):
         return choose_brain_action(self,world)
+
+    def _finalize_brain_experience(self, world):
+        return finalize_brain_experience(
+            self,
+            world,
+        )
+
+
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------

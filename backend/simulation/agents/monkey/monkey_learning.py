@@ -1,5 +1,6 @@
 
 import torch
+import random
 
 from backend.simulation.agents.experience import Experience
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -14,6 +15,7 @@ from backend.simulation.agents.monkey.monkey_constants import (
     ENERGY_REWARD_WEIGHT,
     HEALTH_REWARD_WEIGHT,
     MAX_EXPERIENCES,
+    EPSILON,
 )
 
 def get_valid_actions(monkey, world):
@@ -252,6 +254,9 @@ def choose_brain_action(monkey, world):
 
     valid_actions = get_valid_actions(monkey, world)
 
+    if random.random() < EPSILON:
+        return random.choice(valid_actions)
+
     best_action = None
     best_score = float('-inf')
 
@@ -265,3 +270,29 @@ def choose_brain_action(monkey, world):
 
     return best_action
 
+def finalize_brain_experience(monkey, world):
+    if (
+        monkey.pending_brain_state is None
+        or monkey.pending_brain_action is None
+    ):
+        return
+
+    next_state = get_brain_state(
+        monkey,
+        world,
+    )
+
+    experience = Experience(
+        state=monkey.pending_brain_state,
+        action=monkey.pending_brain_action,
+        reward=monkey.reward,
+        next_state=next_state,
+    )
+
+    monkey.experiences.append(experience)
+
+    if len(monkey.experiences) > MAX_EXPERIENCES:
+        monkey.experiences.pop(0)
+
+    monkey.pending_brain_state = None
+    monkey.pending_brain_action = None
