@@ -258,3 +258,19 @@ def get_monkey_brain_output(monkey_id: int):
         "monkey_id": monkey.id,
         "outputs": outputs.tolist(),
     }
+
+@app.get("/monkeys/{monkey_id}/brain-choice")
+def get_monkey_brain_choice(monkey_id: int):
+    monkey = world.get_monkey(monkey_id)
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Monkey not found",
+        )
+
+    return {
+        "monkey_id": monkey.id,
+        "valid_actions": monkey._get_valid_actions(world),
+        "chosen_action": monkey._choose_brain_action(world),
+    }

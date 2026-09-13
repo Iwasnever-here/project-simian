@@ -246,3 +246,22 @@ def get_brain_output(monkey, world):
         outputs = monkey.brain(state_tensor)
 
     return outputs
+
+def choose_brain_action(monkey, world):
+    outputs = get_brain_output(monkey, world)
+
+    valid_actions = get_valid_actions(monkey, world)
+
+    best_action = None
+    best_score = float('-inf')
+
+    for action in valid_actions:
+        action_index = encode_monkey_action(action)
+        score = outputs[action_index].item()
+
+        if score > best_score:
+            best_score = score
+            best_action = action
+
+    return best_action
+

@@ -10,6 +10,7 @@ from backend.simulation.agents.monkey.monkey_learning import (
     finalize_tourist_experience,
     get_brain_state,
     get_brain_output,
+    choose_brain_action,
 )
 
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -918,6 +919,8 @@ class Monkey:
     def _get_brain_output(self, world):
         return get_brain_output(self,world)
 
+    def _choose_brain_action(self, world):
+        return choose_brain_action(self,world)
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
