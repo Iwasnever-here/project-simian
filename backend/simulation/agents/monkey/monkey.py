@@ -12,6 +12,7 @@ from backend.simulation.agents.monkey.monkey_learning import (
     get_brain_output,
     choose_brain_action,
     finalize_brain_experience,
+    train_brain
 )
 
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -80,6 +81,7 @@ from backend.simulation.agents.monkey.monkey_constants import (
     AGGRESSION_DOMINANCE_THRESHOLD,
     TOURIST_INTERACTION_DURATION,
     TOURIST_INTERACTION_COOLDOWN_TICKS,
+    TRAINING_INTERVAL_TICKS,
 )
 
 from backend.simulation.agents.monkey.monkey_tourists import (
@@ -204,10 +206,17 @@ class Monkey:
     pending_brain_state: list[float] | None = None
     pending_brain_action: int | None = None
 
+    brain_experiences: list[Experience] = field(
+        default_factory=list
+    )
+
+    last_training_loss: float | None = None
+
     brain: MonkeyBrain = field(default_factory = lambda: MonkeyBrain(
         input_size = 18,
         output_size = len(MONKEY_ACTIONS)
     ))
+    
 
     # -----------------------------------------------------------------
     # Main update
@@ -236,21 +245,8 @@ class Monkey:
             visible_monkeys = self._observe_monkeys(world)
             visible_tourists = self._observe_tourists(world)
 
-            brain_state = self._get_brain_state(world)
-            brain_action = self._choose_brain_action(world)
-
-            if brain_action == "seek_food":
-                self.pending_brain_state = brain_state
-
-                self.pending_brain_action = (
-                    self._encode_monkey_action(
-                        brain_action
-                    )
-                )
-
-                self._handle_food_seeking(world)
-
-            elif (
+            # Keep emergency sleep hard-coded for now.
+            if (
                 self.energy <= SLEEP_ENERGY_THRESHOLD
                 or self.state == SEEKING_SHELTER_STATE
             ):
@@ -270,10 +266,7 @@ class Monkey:
                     "scaring_tourist",
                 )
             ):
-                if not self._update_tourist_interaction_ticks():
-                    pass
-
-                else:
+                if self._update_tourist_interaction_ticks():
                     tourist = next(
                         (
                             tourist
@@ -288,7 +281,6 @@ class Monkey:
                         self.state = (
                             "investigating_tourist"
                         )
-
                         self.current_tourist_action = None
                         self.pending_tourist_done = True
 
@@ -298,23 +290,32 @@ class Monkey:
                             tourist,
                         )
 
-            elif self._handle_tourist_investigation(
-                world,
-                visible_tourists,
-            ):
-                pass
-
-            elif self._handle_social_interaction(
-                world,
-                visible_monkeys,
-            ):
-                pass
-
             else:
-                self.state = WANDER_STATE
+                # Brain gets control here.
+                brain_state = self._get_brain_state(
+                    world
+                )
 
-                self.clear_target()
-                self._wander(world)
+                brain_action = self._choose_brain_action(
+                    world
+                )
+
+                self.pending_brain_state = brain_state
+                self.pending_brain_action = (
+                    self._encode_monkey_action(
+                        brain_action
+                    )
+                )
+
+                if brain_action == "seek_food":
+                    self._handle_food_seeking(
+                        world
+                    )
+
+                elif brain_action == "wander":
+                    self.state = WANDER_STATE
+                    self.clear_target()
+                    self._wander(world)
 
         self.apply_environmental_risk(world)
         self._update_survival()
@@ -328,6 +329,11 @@ class Monkey:
         self._finalize_brain_experience(
             world
         )
+
+        if world.total_tick % TRAINING_INTERVAL_TICKS == 0:
+            self.last_training_loss = (
+                self._train_brain()
+            )
 
         if self.pending_tourist_state is not None:
             self.pending_tourist_reward += (
@@ -916,7 +922,7 @@ class Monkey:
 
 
     def _choose_tourist_action(self, tourist):
-        return choose_tourist_action(self, tourist)
+        return choose_tourist_action(tourist)
 
     def _execute_tourist_action(self, world, tourist, action):
         return execute_tourist_action(self, world, tourist, action)
@@ -959,7 +965,8 @@ class Monkey:
             world,
         )
 
-
+    def _train_brain(self):
+        return train_brain(self)
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------
@@ -1015,4 +1022,14 @@ class Monkey:
                 for item in self.held_items
             ],
             "reward": round(self.reward, 2),
+
+            "brain_experience_count": len(
+                self.brain_experiences
+            ),
+
+            "training_loss": (
+                round(self.last_training_loss, 4)
+                if self.last_training_loss is not None
+                else None
+            ),
         }

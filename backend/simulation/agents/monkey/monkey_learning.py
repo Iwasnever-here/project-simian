@@ -1,6 +1,7 @@
 
 import torch
 import random
+import torch.nn.functional as F
 
 from backend.simulation.agents.experience import Experience
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -16,7 +17,16 @@ from backend.simulation.agents.monkey.monkey_constants import (
     HEALTH_REWARD_WEIGHT,
     MAX_EXPERIENCES,
     EPSILON,
+    BRAIN_CONTROLLED_ACTIONS,
+    LEARNING_RATE,
+    GAMMA,
+    BATCH_SIZE,
+    MIN_TRAINING_EXPERIENCES,
 )
+
+
+
+
 
 def get_valid_actions(monkey, world):
     valid_actions = ["wander"]
@@ -250,18 +260,33 @@ def get_brain_output(monkey, world):
     return outputs
 
 def choose_brain_action(monkey, world):
-    outputs = get_brain_output(monkey, world)
+    outputs = get_brain_output(
+        monkey,
+        world,
+    )
 
-    valid_actions = get_valid_actions(monkey, world)
+    valid_actions = get_valid_actions(
+        monkey,
+        world,
+    )
+
+    brain_actions = [
+        action
+        for action in valid_actions
+        if action in BRAIN_CONTROLLED_ACTIONS
+    ]
 
     if random.random() < EPSILON:
-        return random.choice(valid_actions)
+        return random.choice(brain_actions)
 
     best_action = None
-    best_score = float('-inf')
+    best_score = float("-inf")
 
-    for action in valid_actions:
-        action_index = encode_monkey_action(action)
+    for action in brain_actions:
+        action_index = encode_monkey_action(
+            action
+        )
+
         score = outputs[action_index].item()
 
         if score > best_score:
@@ -287,12 +312,108 @@ def finalize_brain_experience(monkey, world):
         action=monkey.pending_brain_action,
         reward=monkey.reward,
         next_state=next_state,
+        done=not monkey.alive,
     )
 
-    monkey.experiences.append(experience)
+    monkey.brain_experiences.append(experience)
 
-    if len(monkey.experiences) > MAX_EXPERIENCES:
-        monkey.experiences.pop(0)
+    if len(monkey.brain_experiences) > MAX_EXPERIENCES:
+        monkey.brain_experiences.pop(0)
 
     monkey.pending_brain_state = None
     monkey.pending_brain_action = None
+
+
+def train_brain(monkey):
+    if (
+        len(monkey.brain_experiences)
+        < MIN_TRAINING_EXPERIENCES
+    ):
+        return None
+
+    batch = random.sample(
+        monkey.brain_experiences,
+        BATCH_SIZE,
+    )
+
+    states = torch.tensor(
+        [experience.state for experience in batch],
+        dtype=torch.float32,
+    )
+
+    actions = torch.tensor(
+        [experience.action for experience in batch],
+        dtype=torch.long,
+    )
+
+    rewards = torch.tensor(
+        [experience.reward for experience in batch],
+        dtype=torch.float32,
+    )
+
+    next_states = torch.tensor(
+        [experience.next_state for experience in batch],
+        dtype=torch.float32,
+    )
+
+    dones = torch.tensor(
+        [experience.done for experience in batch],
+        dtype=torch.float32,
+    )
+
+    # Current Q-values predicted by the brain.
+    q_values = monkey.brain(states)
+
+    # Keep only the Q-value for the action
+    # the monkey actually chose.
+    chosen_q_values = q_values.gather(
+        1,
+        actions.unsqueeze(1),
+    ).squeeze(1)
+
+    controlled_indexes = torch.tensor(
+        [
+            encode_monkey_action(action)
+            for action in BRAIN_CONTROLLED_ACTIONS
+        ],
+        dtype=torch.long,
+    )
+
+    # Work out the training target.
+    # No gradients are needed for this calculation.
+    with torch.no_grad():
+        next_q_values = monkey.brain(
+            next_states
+        )
+
+        controlled_next_q_values = (
+            next_q_values[
+                :,
+                controlled_indexes,
+            ]
+        )
+
+        best_next_q_values = (
+            controlled_next_q_values
+            .max(dim=1)
+            .values
+        )
+
+        targets = rewards + (
+            GAMMA
+            * best_next_q_values
+            * (1.0 - dones)
+        )
+
+    loss = F.mse_loss(
+        chosen_q_values,
+        targets,
+    )
+
+    monkey.brain.optimizer.zero_grad()
+
+    loss.backward()
+
+    monkey.brain.optimizer.step()
+
+    return loss.item()

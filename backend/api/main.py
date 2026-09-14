@@ -274,3 +274,4 @@ def get_monkey_brain_choice(monkey_id: int):
         "valid_actions": monkey._get_valid_actions(world),
         "chosen_action": monkey._choose_brain_action(world),
     }
+

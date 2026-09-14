@@ -7,3 +7,4 @@ class Experience:
     action: int
     reward: float
     next_state: list[float]
+    done: bool
