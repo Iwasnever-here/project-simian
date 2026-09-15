@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 MAX_FRUIT = 5
-FRUIT_REGROW_TICKS = 200
+FRUIT_REGROW_TICKS = 180
 
 @dataclass
 class Tree:
