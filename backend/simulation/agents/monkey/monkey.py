@@ -283,6 +283,7 @@ class Monkey:
                 )
 
                 brain_action = self._choose_brain_action(
+                    brain_state,
                     world
                 )
 
@@ -942,8 +943,8 @@ class Monkey:
     def _get_brain_output(self, world):
         return get_brain_output(self,world)
 
-    def _choose_brain_action(self, world):
-        return choose_brain_action(self,world)
+    def _choose_brain_action(self, state, world):
+        return choose_brain_action(self,state,world)
 
     def _finalize_brain_experience(self, world):
         return finalize_brain_experience(

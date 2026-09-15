@@ -247,28 +247,23 @@ def get_brain_state(monkey, world):
         1.0 if monkey.held_items else 0.0,
     ]
 
-def get_brain_output(monkey, world):
-    state = get_brain_state(monkey,world)
-
+def get_brain_output(monkey, state):
     state_tensor = torch.tensor(
         state,
-        dtype=torch.float32
+        dtype=torch.float32,
     )
+
     with torch.no_grad():
-        outputs = monkey.brain(state_tensor)
+        outputs = monkey.brain(
+            state_tensor
+        )
 
     return outputs
 
-def choose_brain_action(monkey, world):
-    outputs = get_brain_output(
-        monkey,
-        world,
-    )
+def choose_brain_action(monkey,state,world):
+    outputs = get_brain_output(monkey,state,)
 
-    valid_actions = get_valid_actions(
-        monkey,
-        world,
-    )
+    valid_actions = get_valid_actions(monkey,world,)
 
     brain_actions = [
         action
@@ -283,9 +278,7 @@ def choose_brain_action(monkey, world):
     best_score = float("-inf")
 
     for action in brain_actions:
-        action_index = encode_monkey_action(
-            action
-        )
+        action_index = encode_monkey_action(action)
 
         score = outputs[action_index].item()
 
@@ -414,6 +407,31 @@ def train_brain(monkey):
 
     loss.backward()
 
+    torch.nn.utils.clip_grad_norm_(
+        monkey.brain.parameters(),
+        max_norm=1.0,
+    )
+
     monkey.brain.optimizer.step()
 
     return loss.item()
+
+
+
+def get_controlled_q_values(monkey, world):
+    state = get_brain_state(
+        monkey,
+        world,
+    )
+
+    outputs = get_brain_output(
+        monkey,
+        state,
+    )
+
+    return {
+        action: outputs[
+            encode_monkey_action(action)
+        ].item()
+        for action in BRAIN_CONTROLLED_ACTIONS
+    }

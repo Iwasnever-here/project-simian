@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from backend.simulation.agents.monkey.monkey_learning import get_controlled_q_values
 from backend.simulation.world.world import World
 
 
@@ -275,3 +276,25 @@ def get_monkey_brain_choice(monkey_id: int):
         "chosen_action": monkey._choose_brain_action(world),
     }
 
+@app.get("/monkeys/{monkey_id}/brain-debug")
+def get_monkey_brain_debug(monkey_id: int):
+    monkey = world.get_monkey(monkey_id)
+
+    if monkey is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Monkey not found",
+        )
+
+    return {
+        "id": monkey.id,
+        "hunger": monkey.hunger,
+        "brain_experiences": len(
+            monkey.brain_experiences
+        ),
+        "training_loss": monkey.last_training_loss,
+        "q_values": get_controlled_q_values(
+            monkey,
+            world,
+        ),
+    }
