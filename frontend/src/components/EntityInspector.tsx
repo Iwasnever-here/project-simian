@@ -7,9 +7,8 @@ type Props = {
   onCloseTourist: () => void
 }
 
-function clampPercent(value: number) {
-  const percent =
-    value <= 1 ? value * 100 : value
+function clampPercent(value: number, maxValue: number) {
+  const percent = (value / maxValue) * 100
 
   return Math.max(
     0,
@@ -20,19 +19,24 @@ function clampPercent(value: number) {
 function Meter({
   label,
   value,
+  maxValue,
   type = 'default',
 }: {
   label: string
   value: number
+  maxValue: number
   type?: string
 }) {
-  const percentage =
-    clampPercent(value)
+  const percentage = clampPercent(
+    value,
+    maxValue,
+  )
 
   return (
     <div className="meter-row">
       <div className="meter-row__label">
         <span>{label}</span>
+
         <strong>
           {Math.round(percentage)}%
         </strong>
@@ -125,18 +129,21 @@ function EntityInspector({
           <Meter
             label="Health"
             value={monkey.health}
+            maxValue={100}
             type="health"
           />
 
           <Meter
             label="Energy"
             value={monkey.energy}
+            maxValue={100}
             type="energy"
           />
 
           <Meter
             label="Hunger"
             value={monkey.hunger}
+            maxValue={100}
             type="hunger"
           />
         </section>
@@ -181,26 +188,31 @@ function EntityInspector({
           <Meter
             label="Boldness"
             value={monkey.traits.boldness}
+            maxValue={1}
           />
 
           <Meter
             label="Curiosity"
             value={monkey.traits.curiosity}
+            maxValue={1}
           />
 
           <Meter
             label="Sociability"
             value={monkey.traits.sociability}
+            maxValue={1}
           />
 
           <Meter
             label="Memory"
             value={monkey.traits.memory}
+            maxValue={1}
           />
 
           <Meter
             label="Aggression"
             value={monkey.traits.aggression}
+            maxValue={1}
           />
         </section>
       </aside>

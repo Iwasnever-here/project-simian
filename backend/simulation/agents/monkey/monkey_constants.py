@@ -154,6 +154,7 @@ MIN_TRAINING_EXPERIENCES = 32
 BRAIN_CONTROLLED_ACTIONS = [
     "wander",
     "seek_food",
+    "seek_shelter"
 ]
 
 TRAINING_INTERVAL_TICKS = 20

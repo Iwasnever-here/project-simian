@@ -231,14 +231,7 @@ class Monkey:
             visible_monkeys = self._observe_monkeys(world)
             visible_tourists = self._observe_tourists(world)
 
-            # Keep emergency sleep hard-coded for now.
             if (
-                self.energy <= SLEEP_ENERGY_THRESHOLD
-                or self.state == SEEKING_SHELTER_STATE
-            ):
-                self._handle_seeking_shelter(world)
-
-            elif (
                 self.should_follow_mother()
                 and self.follow_mother(world)
             ):
@@ -257,16 +250,13 @@ class Monkey:
                         (
                             tourist
                             for tourist in visible_tourists
-                            if tourist.id
-                            == self.target_tourist_id
+                            if tourist.id == self.target_tourist_id
                         ),
                         None,
                     )
 
                     if tourist is None:
-                        self.state = (
-                            "investigating_tourist"
-                        )
+                        self.state = "investigating_tourist"
                         self.current_tourist_action = None
                         self.pending_tourist_done = True
 
@@ -277,17 +267,17 @@ class Monkey:
                         )
 
             else:
-                # Brain gets control here.
                 brain_state = self._get_brain_state(
                     world
                 )
 
                 brain_action = self._choose_brain_action(
                     brain_state,
-                    world
+                    world,
                 )
 
                 self.pending_brain_state = brain_state
+
                 self.pending_brain_action = (
                     self._encode_monkey_action(
                         brain_action
@@ -299,12 +289,22 @@ class Monkey:
                         world
                     )
 
+                elif brain_action == "seek_shelter":
+                    self._handle_seeking_shelter(
+                        world
+                    )
+
                 elif brain_action == "wander":
                     self.state = WANDER_STATE
                     self.clear_target()
-                    self._wander(world)
+                    self._wander(
+                        world
+                    )
 
-        self.apply_environmental_risk(world)
+        self.apply_environmental_risk(
+            world
+        )
+
         self._update_survival()
 
         self.reward = self._calculate_reward(
@@ -317,7 +317,11 @@ class Monkey:
             world
         )
 
-        if world.total_tick % TRAINING_INTERVAL_TICKS == 0:
+        if (
+            world.total_tick
+            % TRAINING_INTERVAL_TICKS
+            == 0
+        ):
             self.last_training_loss = (
                 self._train_brain()
             )
