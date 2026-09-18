@@ -218,7 +218,7 @@ class Monkey:
 
         self.moved_this_tick = False
 
-        self._increase_hunger()
+        self._increase_hunger(world)
         self._update_food_memory_cooldowns()
         self._update_tourist_interaction_cooldown()
 
@@ -232,12 +232,6 @@ class Monkey:
             visible_tourists = self._observe_tourists(world)
 
             if (
-                self.should_follow_mother()
-                and self.follow_mother(world)
-            ):
-                pass
-
-            elif (
                 self.target_tourist_id is not None
                 and self.state in (
                     "watching_tourist",
@@ -266,10 +260,11 @@ class Monkey:
                             tourist,
                         )
 
+            if self.should_follow_mother():
+                self.follow_mother(world)
+
             else:
-                brain_state = self._get_brain_state(
-                    world
-                )
+                brain_state = self._get_brain_state(world)
 
                 brain_action = self._choose_brain_action(
                     brain_state,
@@ -277,34 +272,51 @@ class Monkey:
                 )
 
                 self.pending_brain_state = brain_state
-
                 self.pending_brain_action = (
-                    self._encode_monkey_action(
-                        brain_action
-                    )
+                    self._encode_monkey_action(brain_action)
                 )
 
                 if brain_action == "seek_food":
-                    self._handle_food_seeking(
-                        world
-                    )
+                    self._handle_food_seeking(world)
 
                 elif brain_action == "seek_shelter":
-                    self._handle_seeking_shelter(
-                        world
+                    self._handle_seeking_shelter(world)
+
+                elif brain_action == "follow_mother":
+                    if self.should_follow_mother():
+                        followed = self.follow_mother(world)
+
+                        if not followed:
+                            self.state = WANDER_STATE
+                            self.clear_target()
+                            self._wander(world)
+
+                    else:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+                elif brain_action == "approach_monkey":
+                    handled = self._handle_social_interaction(
+                        world,
+                        visible_monkeys,
                     )
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
 
                 elif brain_action == "wander":
                     self.state = WANDER_STATE
                     self.clear_target()
-                    self._wander(
-                        world
-                    )
+                    self._wander(world)
 
-        self.apply_environmental_risk(
-            world
-        )
+                else:
+                    self.state = WANDER_STATE
+                    self.clear_target()
+                    self._wander(world)
 
+        self.apply_environmental_risk(world)
         self._update_survival()
 
         self.reward = self._calculate_reward(
@@ -313,34 +325,26 @@ class Monkey:
             previous_hunger,
         )
 
-        self._finalize_brain_experience(
-            world
-        )
+        self._finalize_brain_experience(world)
 
-        if (
-            world.total_tick
-            % TRAINING_INTERVAL_TICKS
-            == 0
-        ):
-            self.last_training_loss = (
-                self._train_brain()
-            )
+        if world.total_tick % TRAINING_INTERVAL_TICKS == 0:
+            self.last_training_loss = self._train_brain()
 
         if self.pending_tourist_state is not None:
-            self.pending_tourist_reward += (
-                self.reward
-            )
+            self.pending_tourist_reward += self.reward
 
         if self.pending_tourist_done:
-            self._finalize_tourist_experience(
-                world
-            )
+            self._finalize_tourist_experience(world)
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
     # -----------------------------------------------------------------
 
-    def _increase_hunger(self):
+    def _increase_hunger(self, world):
+        if self.get_life_stage() == "infant":
+            mother = self._get_mother(world)
+            if mother is not None and mother.alive:
+                return 
         self.hunger = min(
             MAX_HUNGER,
             self.hunger + HUNGER_PER_TICK,

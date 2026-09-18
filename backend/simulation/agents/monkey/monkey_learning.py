@@ -70,8 +70,12 @@ def calculate_reward(monkey, previous_health, previous_energy, previous_hunger):
     health_change = monkey.health - previous_health
     energy_change = monkey.energy - previous_energy
 
+    hunger_need = previous_hunger / MAX_HUNGER
+
     reward = (
-        hunger_change * HUNGER_REWARD_WEIGHT
+        hunger_change
+        * HUNGER_REWARD_WEIGHT
+        * hunger_need
         + health_change * HEALTH_REWARD_WEIGHT
         + energy_change * ENERGY_REWARD_WEIGHT
     )

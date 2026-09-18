@@ -131,7 +131,7 @@ function TopBar({
         </button>
 
         <div className="speed-control">
-          {[0.5, 1, 2, 4].map((speed) => (
+          {[1, 2, 4, 8].map((speed) => (
             <button
               type="button"
               key={speed}
