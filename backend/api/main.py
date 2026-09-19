@@ -298,3 +298,16 @@ def get_monkey_brain_debug(monkey_id: int):
             world,
         ),
     }
+
+@app.get("/world/trees")
+def get_tree_states():
+    return [
+        {
+            "x": tree.x,
+            "y": tree.y,
+            "fruit": tree.fruit,
+            "max_fruit": tree.max_fruit,
+        }
+        for tree in world.trees.values()
+        if tree.alive
+    ]
