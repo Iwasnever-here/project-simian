@@ -327,7 +327,7 @@ class Monkey:
 
         self._finalize_brain_experience(world)
 
-        if world.total_tick % TRAINING_INTERVAL_TICKS == 0:
+        if (world.total_tick + self.id) % TRAINING_INTERVAL_TICKS == 0:
             self.last_training_loss = self._train_brain()
 
         if self.pending_tourist_state is not None:

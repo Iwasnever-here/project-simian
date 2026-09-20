@@ -1,4 +1,4 @@
-import { Application, extend } from '@pixi/react'
+import { Application, extend, useApplication } from '@pixi/react'
 import {
   Container,
   Graphics,
@@ -6,7 +6,14 @@ import {
   Texture,
   FederatedPointerEvent,
 } from 'pixi.js'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 extend({ Container, Graphics, Sprite })
 
@@ -75,10 +82,18 @@ type ChunkResponse = {
 }
 
 type LoadedChunk = {
+  cx: number
+  cy: number
   texture: Texture
   trees: TreeData[]
   width: number
   height: number
+}
+
+type SelectionTarget = {
+  x: number
+  y: number
+  size: number
 }
 
 const TILE_SIZE = 8
@@ -87,6 +102,9 @@ const VIEWPORT_WIDTH = 900
 const VIEWPORT_HEIGHT = 600
 
 const LOAD_MARGIN_CHUNKS = 1
+// Chunks further than this (beyond the load margin) are freed.
+const EVICT_EXTRA_CHUNKS = 2
+
 const MONKEY_POLL_INTERVAL = 1000
 const TOURIST_POLL_INTERVAL = 1000
 
@@ -94,6 +112,15 @@ const MIN_ZOOM = 0.5
 const MAX_ZOOM = 4
 const ZOOM_SPEED = 0.0015
 
+// Pixi renders every frame by default (60fps+, more on high-refresh screens).
+// The world only really changes once a second, so 30 is plenty.
+const MAX_FPS = 30
+
+const NO_TARGETS: SelectionTarget[] = []
+
+/* -------------------------------------------------------------------------- */
+/* Pure helpers (defined outside the component so they are never recreated)   */
+/* -------------------------------------------------------------------------- */
 
 function getMonkeyScale(lifeStage: string) {
   if (lifeStage === 'infant') {
@@ -107,9 +134,429 @@ function getMonkeyScale(lifeStage: string) {
   return 1
 }
 
+function getNightAlpha(hour: number) {
+  // Full daylight: 08:00 - 17:00
+  if (hour >= 8 && hour < 17) {
+    return 0
+  }
+
+  // Sunset: 17:00 - 20:00
+  if (hour >= 17 && hour < 20) {
+    return ((hour - 17) / 3) * 0.5
+  }
+
+  // Full night: 20:00 - 05:00
+  if (hour >= 20 || hour < 5) {
+    return 0.5
+  }
+
+  // Sunrise: 05:00 - 08:00
+  return 0.5 * (1 - (hour - 5) / 3)
+}
+
 function chunkKey(cx: number, cy: number) {
   return `${cx}:${cy}`
 }
+
+function drawTrees(graphics: Graphics, trees: TreeData[]) {
+  graphics.clear()
+
+  // Batch all trunks into one fill and all crowns into another, rather than
+  // two fill() calls per tree.
+  for (const tree of trees) {
+    graphics.rect(tree.x * TILE_SIZE + 3, tree.y * TILE_SIZE + 4, 2, 4)
+  }
+  graphics.fill(0x6b4423)
+
+  for (const tree of trees) {
+    graphics.rect(tree.x * TILE_SIZE + 1, tree.y * TILE_SIZE + 1, 6, 5)
+  }
+  graphics.fill(0x123d1f)
+}
+
+function drawTemple(graphics: Graphics, temple: TempleData) {
+  graphics.clear()
+
+  const x = temple.x * TILE_SIZE
+  const y = temple.y * TILE_SIZE
+
+  const w = temple.width * TILE_SIZE
+  const h = temple.height * TILE_SIZE
+
+  const wallThickness = TILE_SIZE * 1.5
+  const towerRadius = TILE_SIZE * 1.8
+  const entranceWidth = TILE_SIZE * 2
+
+  // Outer platform
+  graphics
+    .rect(x - TILE_SIZE, y - TILE_SIZE, w + TILE_SIZE * 2, h + TILE_SIZE * 2)
+    .fill(0x9f9270)
+
+  // Main temple floor
+  graphics.rect(x, y, w, h).fill(0xc2b280)
+
+  // Inner courtyard
+  graphics
+    .rect(
+      x + wallThickness,
+      y + wallThickness,
+      w - wallThickness * 2,
+      h - wallThickness * 2,
+    )
+    .fill(0xd6c69c)
+
+  // Walls (top, left, right, bottom-left, bottom-right) in a single fill
+  graphics
+    .rect(x, y, w, wallThickness)
+    .rect(x, y, wallThickness, h)
+    .rect(x + w - wallThickness, y, wallThickness, h)
+    .rect(
+      x,
+      y + h - wallThickness,
+      w / 2 - entranceWidth / 2,
+      wallThickness,
+    )
+    .rect(
+      x + w / 2 + entranceWidth / 2,
+      y + h - wallThickness,
+      w / 2 - entranceWidth / 2,
+      wallThickness,
+    )
+    .fill(0x6b6045)
+
+  // Corner towers
+  graphics
+    .circle(x, y, towerRadius)
+    .circle(x + w, y, towerRadius)
+    .circle(x, y + h, towerRadius)
+    .circle(x + w, y + h, towerRadius)
+    .fill(0x786b4d)
+
+  // Entrance
+  graphics
+    .rect(
+      temple.entrance.x * TILE_SIZE - TILE_SIZE / 2,
+      temple.entrance.y * TILE_SIZE,
+      entranceWidth,
+      TILE_SIZE,
+    )
+    .fill(0x3b2a1f)
+
+  // Central shrine
+  graphics.circle(x + w / 2, y + h / 2, TILE_SIZE * 0.8).fill(0x8f7d52)
+}
+
+function drawBoatLanding(graphics: Graphics, landing: BoatLandingData) {
+  graphics.clear()
+
+  const x = landing.x * TILE_SIZE
+  const y = landing.y * TILE_SIZE
+  const T = TILE_SIZE
+
+  // Dock
+  graphics
+    .rect(x - T * 2, y + T * 4, T * 6, T * 0.8)
+    .fill(0x8b6f47)
+
+  // Large hull
+  graphics
+    .poly([
+      x - T * 3.5, y + T * 1.5,
+      x + T * 4.5, y + T * 1.5,
+
+      x + T * 3.8, y + T * 2.8,
+      x + T * 3.0, y + T * 3.6,
+      x + T * 2.0, y + T * 4.1,
+      x + T * 0.8, y + T * 4.4,
+
+      x - T * 0.5, y + T * 4.3,
+      x - T * 1.6, y + T * 3.9,
+      x - T * 2.5, y + T * 3.2,
+      x - T * 3.1, y + T * 2.4,
+    ])
+    .fill(0x5c3a21)
+
+  // Mast
+  graphics
+    .rect(x + T * 0.35, y - T * 4.8, T * 0.3, T * 6.5)
+    .fill(0x3b2a1f)
+
+  // Right sail
+  graphics
+    .poly([
+      x + T * 0.8, y - T * 4.5,
+      x + T * 4.0, y - T * 3.3,
+      x + T * 3.5, y + T * 0.8,
+      x + T * 0.8, y + T * 0.8,
+    ])
+    .fill(0xf4e4bc)
+
+  // Left sail
+  graphics
+    .poly([
+      x + T * 0.2, y - T * 4.1,
+      x - T * 3.2, y - T * 3.0,
+      x - T * 2.7, y + T * 0.8,
+      x + T * 0.2, y + T * 0.8,
+    ])
+    .fill(0xe8d39f)
+}
+
+function drawMonkeys(graphics: Graphics, monkeys: MonkeyData[]) {
+  graphics.clear()
+
+  for (const monkey of monkeys) {
+    const scale = getMonkeyScale(monkey.life_stage)
+
+    const centerX = monkey.x * TILE_SIZE + TILE_SIZE
+    const baseY = monkey.y * TILE_SIZE + TILE_SIZE * 2
+
+    const bodyRadius = TILE_SIZE * 0.7 * scale
+    const headRadius = TILE_SIZE * 0.5 * scale
+    const earRadius = TILE_SIZE * 0.2 * scale
+
+    const bodyCenterY = baseY - bodyRadius
+    const headCenterY = bodyCenterY - bodyRadius - headRadius * 0.5
+
+    graphics.circle(centerX, bodyCenterY, bodyRadius).fill(0x6b4423)
+
+    graphics
+      .circle(centerX, headCenterY, headRadius)
+      .circle(centerX - headRadius, headCenterY, earRadius)
+      .circle(centerX + headRadius, headCenterY, earRadius)
+      .fill(0x7a5230)
+  }
+}
+
+function drawTourists(graphics: Graphics, tourists: TouristData[]) {
+  graphics.clear()
+
+  for (const tourist of tourists) {
+    if (tourist.insideTemple) {
+      continue
+    }
+
+    const centerX = tourist.x * TILE_SIZE + TILE_SIZE
+    const baseY = tourist.y * TILE_SIZE + TILE_SIZE * 2
+
+    const bodyRadius = TILE_SIZE * 0.6
+    const headRadius = TILE_SIZE * 0.4
+
+    const bodyCenterY = baseY - bodyRadius
+    const headCenterY = bodyCenterY - bodyRadius - headRadius * 0.5
+
+    const shirtColor = tourist.state === 'inside_temple' ? 0xd4af37 : 0xdd4444
+
+    graphics.circle(centerX, bodyCenterY, bodyRadius).fill(shirtColor)
+    graphics.circle(centerX, headCenterY, headRadius).fill(0xf0c8a0)
+  }
+}
+
+function drawSelectionBox(
+  graphics: Graphics,
+  centerX: number,
+  centerY: number,
+  boxSize: number,
+) {
+  const left = centerX - boxSize / 2
+  const top = centerY - boxSize / 2
+  const right = left + boxSize
+  const bottom = top + boxSize
+  const c = boxSize * 0.3
+
+  // Transparent green background
+  graphics
+    .rect(left, top, boxSize, boxSize)
+    .fill({ color: 0x22c55e, alpha: 0.18 })
+
+  // All four corner brackets as one path, one stroke
+  graphics
+    .moveTo(left, top + c).lineTo(left, top).lineTo(left + c, top)
+    .moveTo(right - c, top).lineTo(right, top).lineTo(right, top + c)
+    .moveTo(left, bottom - c).lineTo(left, bottom).lineTo(left + c, bottom)
+    .moveTo(right - c, bottom).lineTo(right, bottom).lineTo(right, bottom - c)
+    .stroke({ width: 2, color: 0xffffff })
+}
+
+// Stable draw callbacks for things that never change
+function drawNightOverlay(graphics: Graphics) {
+  graphics.clear()
+  graphics
+    .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+    .fill({ color: 0x08111f, alpha: 1 })
+}
+
+function drawHitArea(graphics: Graphics) {
+  graphics.clear()
+  graphics
+    .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+    .fill({ color: 0x000000, alpha: 0 })
+}
+
+/* -------------------------------------------------------------------------- */
+/* Data hooks                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Polls a JSON endpoint.
+ *  - chained setTimeout, so requests never overlap if the server is slow
+ *  - pauses while the tab is hidden
+ *  - aborts the in-flight request on unmount
+ *  - skips JSON.parse + setState entirely when the body hasn't changed
+ */
+function usePolling<T>(
+  url: string,
+  intervalMs: number,
+  onData: (data: T) => void,
+) {
+  const onDataRef = useRef(onData)
+  onDataRef.current = onData
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: number | undefined
+    let controller: AbortController | null = null
+    let lastText: string | null = null
+
+    const schedule = () => {
+      if (!cancelled) {
+        timer = window.setTimeout(tick, intervalMs)
+      }
+    }
+
+    const tick = async () => {
+      if (document.hidden) {
+        schedule()
+        return
+      }
+
+      controller = new AbortController()
+
+      try {
+        const response = await fetch(url, { signal: controller.signal })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const text = await response.text()
+
+        if (!cancelled && text !== lastText) {
+          lastText = text
+          onDataRef.current(JSON.parse(text) as T)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error(`Fetch failed (${url}):`, error)
+        }
+      }
+
+      schedule()
+    }
+
+    tick()
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [url, intervalMs])
+}
+
+function useFetchOnce<T>(url: string, onData: (data: T) => void) {
+  const onDataRef = useRef(onData)
+  onDataRef.current = onData
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    fetch(url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        return response.json() as Promise<T>
+      })
+      .then((data) => onDataRef.current(data))
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          console.error(`Fetch failed (${url}):`, error)
+        }
+      })
+
+    return () => controller.abort()
+  }, [url])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Memoised scene pieces                                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Caps the Pixi ticker. Must be rendered inside <Application>. */
+function FrameLimiter({ fps }: { fps: number }) {
+  const { app, isInitialised } = useApplication()
+
+  useEffect(() => {
+    if (isInitialised && app.ticker) {
+      app.ticker.maxFPS = fps
+    }
+  }, [app, isInitialised, fps])
+
+  return null
+}
+
+const ChunkView = memo(function ChunkView({
+  chunk,
+  x,
+  y,
+}: {
+  chunk: LoadedChunk
+  x: number
+  y: number
+}) {
+  const draw = useCallback(
+    (graphics: Graphics) => drawTrees(graphics, chunk.trees),
+    [chunk.trees],
+  )
+
+  return (
+    <pixiContainer x={x} y={y}>
+      <pixiSprite
+        texture={chunk.texture}
+        x={0}
+        y={0}
+        width={chunk.width * TILE_SIZE}
+        height={chunk.height * TILE_SIZE}
+      />
+      <pixiGraphics draw={draw} />
+    </pixiContainer>
+  )
+})
+
+const TempleView = memo(function TempleView({ temple }: { temple: TempleData }) {
+  const draw = useCallback(
+    (graphics: Graphics) => drawTemple(graphics, temple),
+    [temple],
+  )
+  return <pixiGraphics draw={draw} />
+})
+
+const BoatLandingView = memo(function BoatLandingView({
+  landing,
+}: {
+  landing: BoatLandingData
+}) {
+  const draw = useCallback(
+    (graphics: Graphics) => drawBoatLanding(graphics, landing),
+    [landing],
+  )
+  return <pixiGraphics draw={draw} />
+})
+
+/* -------------------------------------------------------------------------- */
+/* Main component                                                             */
+/* -------------------------------------------------------------------------- */
 
 function WorldCanvas({
   worldMeta,
@@ -128,14 +575,20 @@ function WorldCanvas({
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
   const containerRef = useRef<any>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const zoomLabelRef = useRef<HTMLDivElement | null>(null)
   const lastPointerRef = useRef({ x: 0, y: 0 })
   const pointerDownRef = useRef({ x: 0, y: 0 })
   const chunksRef = useRef<Map<string, LoadedChunk>>(new Map())
   const loadingRef = useRef<Set<string>>(new Set())
   const throttleRef = useRef<number | null>(null)
 
+  // Keep the latest callback without making it a dependency of everything
+  // below (an unstable prop would otherwise re-create the wheel listener,
+  // the throttle and the chunk-loading effect on every parent render).
+  const onViewportChangeRef = useRef(onViewportChange)
+  onViewportChangeRef.current = onViewportChange
+
   const [dragging, setDragging] = useState(false)
-  const [zoom, setZoom] = useState(1)
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
   const [temple, setTemple] = useState<TempleData | null>(null)
   const [tourists, setTourists] = useState<TouristData[]>([])
@@ -144,35 +597,23 @@ function WorldCanvas({
   const [, bumpVersion] = useState(0)
   const nightAlpha = getNightAlpha(hour)
 
-  function getNightAlpha(hour: number) {
-    // Full daylight: 08:00 - 17:00
-    if (hour >= 8 && hour < 17) {
-      return 0
-    }
-
-    // Sunset: 17:00 - 20:00
-    if (hour >= 17 && hour < 20) {
-      const progress = (hour - 17) / 3
-      return progress * 0.5
-    }
-
-    // Full night: 20:00 - 05:00
-    if (hour >= 20 || hour < 5) {
-      return 0.5
-    }
-
-    // Sunrise: 05:00 - 08:00
-    const progress = (hour - 5) / 3
-
-    return 0.5 * (1 - progress)
-  }
-
   const forceRender = useCallback(() => {
     bumpVersion((version) => version + 1)
   }, [])
 
   const maxCx = Math.ceil(width / chunkSize) - 1
   const maxCy = Math.ceil(height / chunkSize) - 1
+
+  /* ------------------------------ data loading ----------------------------- */
+
+  usePolling<MonkeyData[]>(`${apiBase}/monkeys`, MONKEY_POLL_INTERVAL, setMonkeys)
+  usePolling<TouristData[]>(
+    `${apiBase}/tourists`,
+    TOURIST_POLL_INTERVAL,
+    setTourists,
+  )
+  useFetchOnce<TempleData>(`${apiBase}/temple`, setTemple)
+  useFetchOnce<BoatLandingData>(`${apiBase}/boat-landing`, setBoatLanding)
 
   const loadChunk = useCallback(
     async (cx: number, cy: number) => {
@@ -221,6 +662,8 @@ function WorldCanvas({
         texture.source.scaleMode = 'nearest'
 
         chunksRef.current.set(key, {
+          cx,
+          cy,
           texture,
           trees: data.trees ?? [],
           width: data.w,
@@ -236,100 +679,10 @@ function WorldCanvas({
     [apiBase, forceRender],
   )
 
-  const loadTemple = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiBase}/temple`)
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data: TempleData = await response.json()
-      setTemple(data)
-    } catch (error) {
-      console.error('Temple fetch failed:', error)
-    }
-  }, [apiBase])
-
-  const loadMonkeys = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiBase}/monkeys`)
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data: MonkeyData[] = await response.json()
-      setMonkeys(data)
-    } catch (error) {
-      console.error('Monkey fetch failed:', error)
-    }
-  }, [apiBase])
-
-  const loadTourists = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiBase}/tourists`)
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data: TouristData[] = await response.json()
-      setTourists(data)
-    } catch (error) {
-      console.error('Tourist fetch failed:', error)
-    }
-  }, [apiBase])
-
-  const loadBoatLanding = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiBase}/boat-landing`)
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data: BoatLandingData = await response.json()
-      setBoatLanding(data)
-    } catch (error) {
-      console.error('Boat landing fetch failed:', error)
-    }
-  }, [apiBase])
-
-  useEffect(() => {
-    loadMonkeys()
-
-    const interval = window.setInterval(loadMonkeys, MONKEY_POLL_INTERVAL)
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [loadMonkeys])
-
-  useEffect(() => {
-    loadTemple()
-  }, [loadTemple])
-
-  useEffect(() => {
-    loadTourists()
-
-    const interval = window.setInterval(loadTourists, TOURIST_POLL_INTERVAL)
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [loadTourists])
-
-  useEffect(() => {
-    loadBoatLanding()
-  }, [loadBoatLanding])
-
   const updateVisibleChunks = useCallback(() => {
     const { x: cameraX, y: cameraY, zoom: cameraZoom } = cameraRef.current
 
-    /*
-     * Convert the visible screen area back into world pixel coordinates.
-     */
+    // Convert the visible screen area back into world pixel coordinates.
     const worldLeft = -cameraX / cameraZoom
     const worldTop = -cameraY / cameraZoom
     const worldRight = (VIEWPORT_WIDTH - cameraX) / cameraZoom
@@ -339,17 +692,14 @@ function WorldCanvas({
       0,
       Math.floor(worldLeft / chunkPixelSize) - LOAD_MARGIN_CHUNKS,
     )
-
     const endCx = Math.min(
       maxCx,
       Math.floor(worldRight / chunkPixelSize) + LOAD_MARGIN_CHUNKS,
     )
-
     const startCy = Math.max(
       0,
       Math.floor(worldTop / chunkPixelSize) - LOAD_MARGIN_CHUNKS,
     )
-
     const endCy = Math.min(
       maxCy,
       Math.floor(worldBottom / chunkPixelSize) + LOAD_MARGIN_CHUNKS,
@@ -361,16 +711,42 @@ function WorldCanvas({
       }
     }
 
-    /*
-     * This is also what keeps the minimap viewport correct.
-     */
-    onViewportChange?.({
+    // Free chunks that are well outside the view so the scene graph and
+    // texture memory don't grow forever as the user pans around.
+    const stale: Texture[] = []
+
+    for (const [key, chunk] of chunksRef.current) {
+      if (
+        chunk.cx < startCx - EVICT_EXTRA_CHUNKS ||
+        chunk.cx > endCx + EVICT_EXTRA_CHUNKS ||
+        chunk.cy < startCy - EVICT_EXTRA_CHUNKS ||
+        chunk.cy > endCy + EVICT_EXTRA_CHUNKS
+      ) {
+        chunksRef.current.delete(key)
+        stale.push(chunk.texture)
+      }
+    }
+
+    if (stale.length > 0) {
+      forceRender()
+
+      // Destroy a little later so the sprite is definitely gone from the
+      // scene before its texture is.
+      window.setTimeout(() => {
+        for (const texture of stale) {
+          texture.destroy(true)
+        }
+      }, 1000)
+    }
+
+    // This is also what keeps the minimap viewport correct.
+    onViewportChangeRef.current?.({
       x: worldLeft / TILE_SIZE,
       y: worldTop / TILE_SIZE,
       width: VIEWPORT_WIDTH / (TILE_SIZE * cameraZoom),
       height: VIEWPORT_HEIGHT / (TILE_SIZE * cameraZoom),
     })
-  }, [chunkPixelSize, maxCx, maxCy, loadChunk, onViewportChange])
+  }, [chunkPixelSize, maxCx, maxCy, loadChunk, forceRender])
 
   useEffect(() => {
     updateVisibleChunks()
@@ -388,141 +764,89 @@ function WorldCanvas({
   }, [updateVisibleChunks])
 
   useEffect(() => {
+    const chunks = chunksRef.current
+
     return () => {
       if (throttleRef.current !== null) {
         window.clearTimeout(throttleRef.current)
       }
 
-      for (const chunk of chunksRef.current.values()) {
+      for (const chunk of chunks.values()) {
         chunk.texture.destroy(true)
       }
 
-      chunksRef.current.clear()
+      chunks.clear()
     }
   }, [])
 
- const handleWorldClick = useCallback(
-  (event: FederatedPointerEvent) => {
-    const camera = cameraRef.current
+  /* ------------------------------ interaction ------------------------------ */
 
-    const worldPixelX =
-      (event.global.x - camera.x) / camera.zoom
+  const handleWorldClick = useCallback(
+    (event: FederatedPointerEvent) => {
+      const camera = cameraRef.current
 
-    const worldPixelY =
-      (event.global.y - camera.y) / camera.zoom
+      const worldPixelX = (event.global.x - camera.x) / camera.zoom
+      const worldPixelY = (event.global.y - camera.y) / camera.zoom
 
-    let closestMonkey: MonkeyData | null = null
-    let closestMonkeyDistance = Infinity
+      // Compare squared distances; no need for sqrt in a hit test.
+      let closestMonkey: MonkeyData | null = null
+      let closestMonkeyDistSq = Infinity
 
-    for (const monkey of monkeys) {
-      const scale = getMonkeyScale(
-        monkey.life_stage,
-      )
+      for (const monkey of monkeys) {
+        const hitRadius = TILE_SIZE * 1.2 * getMonkeyScale(monkey.life_stage)
 
-      const monkeyX = monkey.x * TILE_SIZE
-      const monkeyY = monkey.y * TILE_SIZE
+        const dx = worldPixelX - (monkey.x * TILE_SIZE + TILE_SIZE)
+        const dy = worldPixelY - (monkey.y * TILE_SIZE + TILE_SIZE)
+        const distSq = dx * dx + dy * dy
 
-      const centerX = monkeyX + TILE_SIZE
-      const centerY = monkeyY + TILE_SIZE
+        if (distSq <= hitRadius * hitRadius && distSq < closestMonkeyDistSq) {
+          closestMonkey = monkey
+          closestMonkeyDistSq = distSq
+        }
+      }
 
-      const hitRadius =
-        TILE_SIZE * 1.2 * scale
+      let closestTourist: TouristData | null = null
+      let closestTouristDistSq = Infinity
+      const touristHitRadius = TILE_SIZE * 1.2
 
-      const dx = worldPixelX - centerX
-      const dy = worldPixelY - centerY
+      for (const tourist of tourists) {
+        if (tourist.insideTemple) {
+          continue
+        }
 
-      const distance = Math.sqrt(
-        dx * dx + dy * dy,
-      )
+        const dx = worldPixelX - (tourist.x * TILE_SIZE + TILE_SIZE)
+        const dy = worldPixelY - (tourist.y * TILE_SIZE + TILE_SIZE)
+        const distSq = dx * dx + dy * dy
+
+        if (
+          distSq <= touristHitRadius * touristHitRadius &&
+          distSq < closestTouristDistSq
+        ) {
+          closestTourist = tourist
+          closestTouristDistSq = distSq
+        }
+      }
 
       if (
-        distance <= hitRadius &&
-        distance < closestMonkeyDistance
+        closestMonkey &&
+        (!closestTourist || closestMonkeyDistSq <= closestTouristDistSq)
       ) {
-        closestMonkey = monkey
-        closestMonkeyDistance = distance
-      }
-    }
-
-    let closestTourist: TouristData | null = null
-    let closestTouristDistance = Infinity
-
-    for (const tourist of tourists) {
-      if (tourist.insideTemple) {
-        continue
+        onMonkeySelect?.(closestMonkey.id)
+        onTouristSelect?.(null)
+        return
       }
 
-      const touristX =
-        tourist.x * TILE_SIZE
-
-      const touristY =
-        tourist.y * TILE_SIZE
-
-      const centerX =
-        touristX + TILE_SIZE
-
-      const centerY =
-        touristY + TILE_SIZE
-
-      const hitRadius =
-        TILE_SIZE * 1.2
-
-      const dx =
-        worldPixelX - centerX
-
-      const dy =
-        worldPixelY - centerY
-
-      const distance = Math.sqrt(
-        dx * dx + dy * dy,
-      )
-
-      if (
-        distance <= hitRadius &&
-        distance < closestTouristDistance
-      ) {
-        closestTourist = tourist
-        closestTouristDistance = distance
+      if (closestTourist) {
+        onTouristSelect?.(closestTourist.id)
+        onMonkeySelect?.(null)
+        return
       }
-    }
-
-    if (
-      closestMonkey &&
-      (
-        !closestTourist ||
-        closestMonkeyDistance <=
-          closestTouristDistance
-      )
-    ) {
-      onMonkeySelect?.(
-        closestMonkey.id,
-      )
-
-      onTouristSelect?.(null)
-
-      return
-    }
-
-    if (closestTourist) {
-      onTouristSelect?.(
-        closestTourist.id,
-      )
 
       onMonkeySelect?.(null)
-
-      return
-    }
-
-    onMonkeySelect?.(null)
-    onTouristSelect?.(null)
-  },
-  [
-    monkeys,
-    tourists,
-    onMonkeySelect,
-    onTouristSelect,
-  ],
-)
+      onTouristSelect?.(null)
+    },
+    [monkeys, tourists, onMonkeySelect, onTouristSelect],
+  )
 
   /*
    * React's onWheel is registered as a passive listener, so
@@ -557,15 +881,11 @@ function WorldCanvas({
         return
       }
 
-      /*
-       * Find the world position underneath the cursor before zooming.
-       */
+      // World position underneath the cursor before zooming...
       const worldX = (mouseX - camera.x) / oldZoom
       const worldY = (mouseY - camera.y) / oldZoom
 
-      /*
-       * Move camera so that world position stays underneath cursor.
-       */
+      // ...and move the camera so it stays underneath the cursor.
       camera.x = mouseX - worldX * nextZoom
       camera.y = mouseY - worldY * nextZoom
       camera.zoom = nextZoom
@@ -576,7 +896,11 @@ function WorldCanvas({
         containerRef.current.scale.set(nextZoom)
       }
 
-      setZoom(nextZoom)
+      // Zoom label is written straight to the DOM. Using state here meant a
+      // full React re-render of the world on every wheel tick.
+      if (zoomLabelRef.current) {
+        zoomLabelRef.current.textContent = `Zoom: ${Math.round(nextZoom * 100)}%`
+      }
 
       scheduleViewUpdate()
     }
@@ -588,477 +912,113 @@ function WorldCanvas({
     }
   }, [scheduleViewUpdate])
 
-  const loadedChunks = Array.from(chunksRef.current.entries())
+  /* ------------------------------ derived draws ---------------------------- */
+
+  const drawMonkeyLayer = useCallback(
+    (graphics: Graphics) => drawMonkeys(graphics, monkeys),
+    [monkeys],
+  )
+
+  const drawTouristLayer = useCallback(
+    (graphics: Graphics) => drawTourists(graphics, tourists),
+    [tourists],
+  )
+
+  const selectionTargets = useMemo(() => {
+    if (selectedMonkeyId === null && selectedTouristId === null) {
+      return NO_TARGETS
+    }
+
+    const targets: SelectionTarget[] = []
+
+    if (selectedMonkeyId !== null) {
+      const monkey = monkeys.find((m) => m.id === selectedMonkeyId)
+
+      if (monkey) {
+        targets.push({
+          x: monkey.x * TILE_SIZE + TILE_SIZE,
+          y: monkey.y * TILE_SIZE + TILE_SIZE,
+          size: TILE_SIZE * 3 * getMonkeyScale(monkey.life_stage),
+        })
+      }
+    }
+
+    if (selectedTouristId !== null) {
+      const tourist = tourists.find((t) => t.id === selectedTouristId)
+
+      if (tourist && !tourist.insideTemple) {
+        targets.push({
+          x: tourist.x * TILE_SIZE + TILE_SIZE,
+          y: tourist.y * TILE_SIZE + TILE_SIZE,
+          size: TILE_SIZE * 3,
+        })
+      }
+    }
+
+    return targets.length > 0 ? targets : NO_TARGETS
+  }, [monkeys, tourists, selectedMonkeyId, selectedTouristId])
+
+  const drawSelectionLayer = useCallback(
+    (graphics: Graphics) => {
+      graphics.clear()
+
+      for (const target of selectionTargets) {
+        drawSelectionBox(graphics, target.x, target.y, target.size)
+      }
+    },
+    [selectionTargets],
+  )
+
+  /* -------------------------------- render --------------------------------- */
+
+  const loadedChunks = Array.from(chunksRef.current.values())
 
   return (
     <div>
       <div
         ref={wrapperRef}
-        style={{ position: 'relative', width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }}
+        style={{
+          position: 'relative',
+          width: VIEWPORT_WIDTH,
+          height: VIEWPORT_HEIGHT,
+        }}
       >
-        <Application width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} backgroundColor={0x6495ed}>
+        <Application
+          width={VIEWPORT_WIDTH}
+          height={VIEWPORT_HEIGHT}
+          backgroundColor={0x6495ed}
+        >
+          <FrameLimiter fps={MAX_FPS} />
+
           <pixiContainer ref={containerRef}>
-            {loadedChunks.map(([key, chunk]) => {
-              const [cx, cy] = key.split(':').map(Number)
-
-              return (
-                <pixiContainer key={key} x={cx * chunkPixelSize} y={cy * chunkPixelSize}>
-                  <pixiSprite
-                    texture={chunk.texture}
-                    x={0}
-                    y={0}
-                    width={chunk.width * TILE_SIZE}
-                    height={chunk.height * TILE_SIZE}
-                  />
-
-                  <pixiGraphics
-                    draw={(graphics) => {
-                      graphics.clear()
-
-                      for (const tree of chunk.trees) {
-                        const treeX = tree.x * TILE_SIZE
-                        const treeY = tree.y * TILE_SIZE
-
-                        graphics.rect(treeX + 3, treeY + 4, 2, 4).fill(0x6b4423)
-                        graphics.rect(treeX + 1, treeY + 1, 6, 5).fill(0x123d1f)
-                      }
-                    }}
-                  />
-                </pixiContainer>
-              )
-            })}
-
-            {temple && (
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear()
-
-                  const x = temple.x * TILE_SIZE
-                  const y = temple.y * TILE_SIZE
-
-                  const width = temple.width * TILE_SIZE
-                  const height = temple.height * TILE_SIZE
-
-                  const wallThickness = TILE_SIZE * 1.5
-                  const towerRadius = TILE_SIZE * 1.8
-
-                  const entranceWidth = TILE_SIZE * 2
-
-                  // Outer platform
-                  graphics
-                    .rect(
-                      x - TILE_SIZE,
-                      y - TILE_SIZE,
-                      width + TILE_SIZE * 2,
-                      height + TILE_SIZE * 2,
-                    )
-                    .fill(0x9f9270)
-
-                  // Main temple floor
-                  graphics.rect(x, y, width, height).fill(0xc2b280)
-
-                  // Inner courtyard
-                  graphics
-                    .rect(
-                      x + wallThickness,
-                      y + wallThickness,
-                      width - wallThickness * 2,
-                      height - wallThickness * 2,
-                    )
-                    .fill(0xd6c69c)
-
-                  // Top wall
-                  graphics.rect(x, y, width, wallThickness).fill(0x6b6045)
-
-                  // Left wall
-                  graphics.rect(x, y, wallThickness, height).fill(0x6b6045)
-
-                  // Right wall
-                  graphics
-                    .rect(x + width - wallThickness, y, wallThickness, height)
-                    .fill(0x6b6045)
-
-                  // Bottom wall left section
-                  graphics
-                    .rect(
-                      x,
-                      y + height - wallThickness,
-                      width / 2 - entranceWidth / 2,
-                      wallThickness,
-                    )
-                    .fill(0x6b6045)
-
-                  // Bottom wall right section
-                  graphics
-                    .rect(
-                      x + width / 2 + entranceWidth / 2,
-                      y + height - wallThickness,
-                      width / 2 - entranceWidth / 2,
-                      wallThickness,
-                    )
-                    .fill(0x6b6045)
-
-                  // Corner towers
-                  graphics.circle(x, y, towerRadius).fill(0x786b4d)
-                  graphics.circle(x + width, y, towerRadius).fill(0x786b4d)
-                  graphics.circle(x, y + height, towerRadius).fill(0x786b4d)
-                  graphics
-                    .circle(x + width, y + height, towerRadius)
-                    .fill(0x786b4d)
-
-                  // Entrance
-                  const entranceX = temple.entrance.x * TILE_SIZE
-                  const entranceY = temple.entrance.y * TILE_SIZE
-
-                  graphics
-                    .rect(entranceX - TILE_SIZE / 2, entranceY, entranceWidth, TILE_SIZE)
-                    .fill(0x3b2a1f)
-
-                  // Central shrine
-                  graphics
-                    .circle(x + width / 2, y + height / 2, TILE_SIZE * 0.8)
-                    .fill(0x8f7d52)
-                }}
+            {loadedChunks.map((chunk) => (
+              <ChunkView
+                key={chunkKey(chunk.cx, chunk.cy)}
+                chunk={chunk}
+                x={chunk.cx * chunkPixelSize}
+                y={chunk.cy * chunkPixelSize}
               />
-            )}
+            ))}
 
-            {boatLanding && (
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear()
+            {temple && <TempleView temple={temple} />}
+            {boatLanding && <BoatLandingView landing={boatLanding} />}
 
-                  const x = boatLanding.x * TILE_SIZE
-                  const y = boatLanding.y * TILE_SIZE
-
-                  // Dock
-                  graphics
-                    .rect(
-                      x - TILE_SIZE * 2,
-                      y + TILE_SIZE * 4,
-                      TILE_SIZE * 6,
-                      TILE_SIZE * 0.8,
-                    )
-                    .fill(0x8b6f47)
-
-                  // Large hull
-                  graphics
-                    .poly([
-                      x - TILE_SIZE * 3.5, y + TILE_SIZE * 1.5,
-                      x + TILE_SIZE * 4.5, y + TILE_SIZE * 1.5,
-
-                      x + TILE_SIZE * 3.8, y + TILE_SIZE * 2.8,
-                      x + TILE_SIZE * 3.0, y + TILE_SIZE * 3.6,
-                      x + TILE_SIZE * 2.0, y + TILE_SIZE * 4.1,
-                      x + TILE_SIZE * 0.8, y + TILE_SIZE * 4.4,
-
-                      x - TILE_SIZE * 0.5, y + TILE_SIZE * 4.3,
-                      x - TILE_SIZE * 1.6, y + TILE_SIZE * 3.9,
-                      x - TILE_SIZE * 2.5, y + TILE_SIZE * 3.2,
-                      x - TILE_SIZE * 3.1, y + TILE_SIZE * 2.4,
-                    ])
-                    .fill(0x5c3a21)
-
-                  // Mast
-                  graphics
-                    .rect(
-                      x + TILE_SIZE * 0.35,
-                      y - TILE_SIZE * 4.8,
-                      TILE_SIZE * 0.3,
-                      TILE_SIZE * 6.5,
-                    )
-                    .fill(0x3b2a1f)
-
-                  // Right sail
-                  graphics
-                    .poly([
-                      x + TILE_SIZE * 0.8, y - TILE_SIZE * 4.5,
-                      x + TILE_SIZE * 4.0, y - TILE_SIZE * 3.3,
-                      x + TILE_SIZE * 3.5, y + TILE_SIZE * 0.8,
-                      x + TILE_SIZE * 0.8, y + TILE_SIZE * 0.8,
-                    ])
-                    .fill(0xf4e4bc)
-
-                  // Left sail
-                  graphics
-                    .poly([
-                      x + TILE_SIZE * 0.2, y - TILE_SIZE * 4.1,
-                      x - TILE_SIZE * 3.2, y - TILE_SIZE * 3.0,
-                      x - TILE_SIZE * 2.7, y + TILE_SIZE * 0.8,
-                      x + TILE_SIZE * 0.2, y + TILE_SIZE * 0.8,
-                    ])
-                    .fill(0xe8d39f)
-                }}
-              />
-            )}    
-
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear()
-
-                for (const monkey of monkeys) {
-                  const scale = getMonkeyScale(monkey.life_stage)
-
-                  const monkeyX = monkey.x * TILE_SIZE
-                  const monkeyY = monkey.y * TILE_SIZE
-
-                  const centerX = monkeyX + TILE_SIZE
-                  const baseY = monkeyY + TILE_SIZE * 2
-
-                  const bodyRadius = TILE_SIZE * 0.7 * scale
-                  const headRadius = TILE_SIZE * 0.5 * scale
-                  const earRadius = TILE_SIZE * 0.2 * scale
-
-                  const bodyCenterY = baseY - bodyRadius
-                  const headCenterY =
-                    bodyCenterY -
-                    bodyRadius -
-                    headRadius * 0.5
-
-                  graphics
-                    .circle(
-                      centerX,
-                      bodyCenterY,
-                      bodyRadius,
-                    )
-                    .fill(0x6b4423)
-
-                  graphics
-                    .circle(
-                      centerX,
-                      headCenterY,
-                      headRadius,
-                    )
-                    .fill(0x7a5230)
-
-                  graphics
-                    .circle(
-                      centerX - headRadius,
-                      headCenterY,
-                      earRadius,
-                    )
-                    .fill(0x7a5230)
-
-                  graphics
-                    .circle(
-                      centerX + headRadius,
-                      headCenterY,
-                      earRadius,
-                    )
-                    .fill(0x7a5230)
-                }
-              }}
-            />
-
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear()
-
-                for (const tourist of tourists) {
-                  if (tourist.insideTemple) {
-                    continue
-                  }
-
-                  const touristX = tourist.x * TILE_SIZE
-                  const touristY = tourist.y * TILE_SIZE
-
-                  const centerX = touristX + TILE_SIZE
-                  const baseY = touristY + TILE_SIZE * 2
-
-                  const bodyRadius = TILE_SIZE * 0.6
-                  const headRadius = TILE_SIZE * 0.4
-
-                  const bodyCenterY = baseY - bodyRadius
-                  const headCenterY =
-                    bodyCenterY - bodyRadius - headRadius * 0.5
-
-                  // Shirt color varies a bit by state so you can eyeball behavior
-                  const shirtColor =
-                    tourist.state === 'inside_temple' ? 0xd4af37 : 0xdd4444
-
-                  graphics
-                    .circle(centerX, bodyCenterY, bodyRadius)
-                    .fill(shirtColor)
-
-                  graphics
-                    .circle(centerX, headCenterY, headRadius)
-                    .fill(0xf0c8a0)
-                }
-              }}
-            />
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear()
-
-                const drawSelectionBox = (
-                  centerX: number,
-                  centerY: number,
-                  boxSize: number,
-                ) => {
-                  const left = centerX - boxSize / 2
-                  const top = centerY - boxSize / 2
-
-                  const cornerLength = boxSize * 0.3
-
-                  // Transparent green background
-                  graphics
-                    .rect(
-                      left,
-                      top,
-                      boxSize,
-                      boxSize,
-                    )
-                    .fill({
-                      color: 0x22c55e,
-                      alpha: 0.18,
-                    })
-
-                  // Top-left
-                  graphics
-                    .moveTo(left, top + cornerLength)
-                    .lineTo(left, top)
-                    .lineTo(left + cornerLength, top)
-                    .stroke({
-                      width: 2,
-                      color: 0xffffff,
-                    })
-
-                  // Top-right
-                  graphics
-                    .moveTo(
-                      left + boxSize - cornerLength,
-                      top,
-                    )
-                    .lineTo(
-                      left + boxSize,
-                      top,
-                    )
-                    .lineTo(
-                      left + boxSize,
-                      top + cornerLength,
-                    )
-                    .stroke({
-                      width: 2,
-                      color: 0xffffff,
-                    })
-
-                  // Bottom-left
-                  graphics
-                    .moveTo(
-                      left,
-                      top + boxSize - cornerLength,
-                    )
-                    .lineTo(
-                      left,
-                      top + boxSize,
-                    )
-                    .lineTo(
-                      left + cornerLength,
-                      top + boxSize,
-                    )
-                    .stroke({
-                      width: 2,
-                      color: 0xffffff,
-                    })
-
-                  // Bottom-right
-                  graphics
-                    .moveTo(
-                      left + boxSize - cornerLength,
-                      top + boxSize,
-                    )
-                    .lineTo(
-                      left + boxSize,
-                      top + boxSize,
-                    )
-                    .lineTo(
-                      left + boxSize,
-                      top + boxSize - cornerLength,
-                    )
-                    .stroke({
-                      width: 2,
-                      color: 0xffffff,
-                    })
-                }
-
-                if (selectedMonkeyId !== null) {
-                  const monkey = monkeys.find(
-                    (monkey) =>
-                      monkey.id === selectedMonkeyId,
-                  )
-
-                  if (monkey) {
-                    const scale = getMonkeyScale(
-                      monkey.life_stage,
-                    )
-
-                    const centerX =
-                      monkey.x * TILE_SIZE + TILE_SIZE
-
-                    const centerY =
-                      monkey.y * TILE_SIZE + TILE_SIZE
-
-                    const boxSize =
-                      TILE_SIZE * 3 * scale
-
-                    drawSelectionBox(
-                      centerX,
-                      centerY,
-                      boxSize,
-                    )
-                  }
-                }
-
-                if (selectedTouristId !== null) {
-                  const tourist = tourists.find(
-                    (tourist) =>
-                      tourist.id === selectedTouristId,
-                  )
-
-                  if (
-                    tourist &&
-                    !tourist.insideTemple
-                  ) {
-                    const centerX =
-                      tourist.x * TILE_SIZE + TILE_SIZE
-
-                    const centerY =
-                      tourist.y * TILE_SIZE + TILE_SIZE
-
-                    const boxSize = TILE_SIZE * 3
-
-                    drawSelectionBox(
-                      centerX,
-                      centerY,
-                      boxSize,
-                    )
-                  }
-                }
-              }}
-            />
+            <pixiGraphics draw={drawMonkeyLayer} />
+            <pixiGraphics draw={drawTouristLayer} />
+            <pixiGraphics draw={drawSelectionLayer} />
           </pixiContainer>
 
-          {nightAlpha > 0 && (
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear()
-
-                graphics
-                  .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-                  .fill({ color: 0x08111f, alpha: nightAlpha })
-              }}
-            />
-          )}
+          {/* Drawn once; the day/night cycle only changes alpha. */}
+          <pixiGraphics
+            draw={drawNightOverlay}
+            alpha={nightAlpha}
+            visible={nightAlpha > 0}
+          />
 
           <pixiGraphics
             eventMode="static"
             cursor={dragging ? 'grabbing' : 'grab'}
-            draw={(graphics) => {
-              graphics.clear()
-
-              graphics
-                .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-                .fill({ color: 0x000000, alpha: 0 })
-            }}
+            draw={drawHitArea}
             onPointerDown={(event: FederatedPointerEvent) => {
               setDragging(true)
 
@@ -1075,11 +1035,8 @@ function WorldCanvas({
               const currentX = event.global.x
               const currentY = event.global.y
 
-              const dx = currentX - lastPointerRef.current.x
-              const dy = currentY - lastPointerRef.current.y
-
-              cameraRef.current.x += dx
-              cameraRef.current.y += dy
+              cameraRef.current.x += currentX - lastPointerRef.current.x
+              cameraRef.current.y += currentY - lastPointerRef.current.y
 
               if (containerRef.current) {
                 containerRef.current.x = cameraRef.current.x
@@ -1093,8 +1050,12 @@ function WorldCanvas({
             onPointerUp={(event: FederatedPointerEvent) => {
               setDragging(false)
 
-              const movementX = Math.abs(event.global.x - pointerDownRef.current.x)
-              const movementY = Math.abs(event.global.y - pointerDownRef.current.y)
+              const movementX = Math.abs(
+                event.global.x - pointerDownRef.current.x,
+              )
+              const movementY = Math.abs(
+                event.global.y - pointerDownRef.current.y,
+              )
 
               if (movementX < 3 && movementY < 3) {
                 handleWorldClick(event)
@@ -1110,11 +1071,11 @@ function WorldCanvas({
         </Application>
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 14 }}>
-        Zoom: {Math.round(zoom * 100)}%
+      <div ref={zoomLabelRef} style={{ marginTop: 8, fontSize: 14 }}>
+        Zoom: 100%
       </div>
     </div>
   )
 }
 
-export default WorldCanvas
+export default memo(WorldCanvas)

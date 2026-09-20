@@ -198,9 +198,9 @@ def set_simulation_speed(speed: float):
 
     allowed_speeds = {
         1.0,
-        2.0,
-        4.0,
         8.0,
+        32.0,
+        64.0,
     }
 
     if speed not in allowed_speeds:
