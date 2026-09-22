@@ -594,7 +594,7 @@ class Monkey:
 
     def should_follow_mother(self) -> bool:
         return (
-            self.alive and self.parent_ids is not None and self.get_life_stage() in ("infant", "juvenile")
+            self.alive and self.parent_ids is not None and self.get_life_stage()  == "infant"
         )
 
     def _get_mother(self, world):
