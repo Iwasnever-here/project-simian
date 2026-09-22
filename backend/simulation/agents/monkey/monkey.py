@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import random
+import time
 
 
 from backend.simulation.agents.monkey.monkey_learning import (
@@ -209,6 +210,8 @@ class Monkey:
     # -----------------------------------------------------------------
 
     def update(self, world):
+        update_start = time.perf_counter()
+
         previous_hunger = self.hunger
         previous_energy = self.energy
         previous_health = self.health
@@ -222,14 +225,46 @@ class Monkey:
         self._update_food_memory_cooldowns()
         self._update_tourist_interaction_cooldown()
 
+        # ---------------------------------------------------------
+        # Sleeping
+        # ---------------------------------------------------------
+
         if self.state == SLEEPING_STATE:
+            start = time.perf_counter()
+
             self._sleep(world)
+
+            world.monkey_profile["sleep"] += (
+                time.perf_counter() - start
+            )
 
         else:
             self.update_awake_energy()
 
+            # -----------------------------------------------------
+            # Observation
+            # -----------------------------------------------------
+
+            start = time.perf_counter()
+
+            visible_food = world.get_visible_fruit_trees(
+                self.x,
+                self.y,
+                VISION_RANGE,
+            )
+
             visible_monkeys = self._observe_monkeys(world)
             visible_tourists = self._observe_tourists(world)
+
+            world.monkey_profile["observation"] += (
+                time.perf_counter() - start
+            )
+
+            # -----------------------------------------------------
+            # Tourist interaction
+            # -----------------------------------------------------
+
+            start = time.perf_counter()
 
             if (
                 self.target_tourist_id is not None
@@ -260,21 +295,70 @@ class Monkey:
                             tourist,
                         )
 
+            world.monkey_profile["tourist_logic"] += (
+                time.perf_counter() - start
+            )
+
+            # -----------------------------------------------------
+            # Behaviour
+            # -----------------------------------------------------
+
             if self.should_follow_mother():
+                start = time.perf_counter()
+
                 self.follow_mother(world)
 
+                world.monkey_profile["movement"] += (
+                    time.perf_counter() - start
+                )
+
             else:
-                brain_state = self._get_brain_state(world)
+                # -------------------------------------------------
+                # Brain state
+                # -------------------------------------------------
+
+                start = time.perf_counter()
+
+                brain_state = self._get_brain_state(
+                    world,
+                    visible_food,
+                    visible_monkeys,
+                    visible_tourists,
+                )
+
+                world.monkey_profile["brain_state"] += (
+                    time.perf_counter() - start
+                )
+
+                # -------------------------------------------------
+                # Brain action / inference
+                # -------------------------------------------------
+
+                start = time.perf_counter()
 
                 brain_action = self._choose_brain_action(
                     brain_state,
-                    world,
+                    visible_food,
+                    visible_monkeys,
+                    visible_tourists,
+                )
+
+                world.monkey_profile["brain_inference"] += (
+                    time.perf_counter() - start
                 )
 
                 self.pending_brain_state = brain_state
                 self.pending_brain_action = (
-                    self._encode_monkey_action(brain_action)
+                    self._encode_monkey_action(
+                        brain_action
+                    )
                 )
+
+                # -------------------------------------------------
+                # Action execution
+                # -------------------------------------------------
+
+                start = time.perf_counter()
 
                 if brain_action == "seek_food":
                     self._handle_food_seeking(world)
@@ -284,7 +368,9 @@ class Monkey:
 
                 elif brain_action == "follow_mother":
                     if self.should_follow_mother():
-                        followed = self.follow_mother(world)
+                        followed = self.follow_mother(
+                            world
+                        )
 
                         if not followed:
                             self.state = WANDER_STATE
@@ -297,10 +383,13 @@ class Monkey:
                         self._wander(world)
 
                 elif brain_action == "approach_monkey":
-                    handled = self._handle_social_interaction(
-                        world,
-                        visible_monkeys,
+                    handled = (
+                        self._handle_social_interaction(
+                            world,
+                            visible_monkeys,
+                        )
                     )
+
                     if not handled:
                         self.state = WANDER_STATE
                         self.clear_target()
@@ -316,6 +405,18 @@ class Monkey:
                     self.clear_target()
                     self._wander(world)
 
+                world.monkey_profile[
+                    "action_execution"
+                ] += (
+                    time.perf_counter() - start
+                )
+
+        # ---------------------------------------------------------
+        # Survival / reward
+        # ---------------------------------------------------------
+
+        start = time.perf_counter()
+
         self.apply_environmental_risk(world)
         self._update_survival()
 
@@ -325,16 +426,70 @@ class Monkey:
             previous_hunger,
         )
 
+        world.monkey_profile["survival_reward"] += (
+            time.perf_counter() - start
+        )
+
+        # ---------------------------------------------------------
+        # Experience finalisation
+        # ---------------------------------------------------------
+
+        start = time.perf_counter()
+
         self._finalize_brain_experience(world)
 
-        if (world.total_tick + self.id) % TRAINING_INTERVAL_TICKS == 0:
-            self.last_training_loss = self._train_brain()
+        world.monkey_profile["experience"] += (
+            time.perf_counter() - start
+        )
+
+        # ---------------------------------------------------------
+        # Training
+        # ---------------------------------------------------------
+
+        if (
+            world.total_tick + self.id
+        ) % TRAINING_INTERVAL_TICKS == 0:
+            start = time.perf_counter()
+
+            self.last_training_loss = (
+                self._train_brain()
+            )
+
+            world.monkey_profile["training"] += (
+                time.perf_counter() - start
+            )
+
+        # ---------------------------------------------------------
+        # Tourist experience
+        # ---------------------------------------------------------
+
+        start = time.perf_counter()
 
         if self.pending_tourist_state is not None:
-            self.pending_tourist_reward += self.reward
+            self.pending_tourist_reward += (
+                self.reward
+            )
 
         if self.pending_tourist_done:
-            self._finalize_tourist_experience(world)
+            self._finalize_tourist_experience(
+                world
+            )
+
+        world.monkey_profile[
+            "tourist_experience"
+        ] += (
+            time.perf_counter() - start
+        )
+
+        # ---------------------------------------------------------
+        # Total profiling
+        # ---------------------------------------------------------
+
+        world.monkey_profile["total"] += (
+            time.perf_counter() - update_start
+        )
+
+        world.monkey_profile_samples += 1
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
@@ -926,33 +1081,95 @@ class Monkey:
     def _get_tourist_state(self, tourist):
         return get_tourist_state(self, tourist)
     
-    def _get_valid_actions(self, world):
-        return get_valid_actions(self, world)
+    def _get_valid_actions(
+        self,
+        visible_food,
+        visible_monkeys,
+        visible_tourists,
+    ):
+        return get_valid_actions(
+            self,
+            visible_food,
+            visible_monkeys,
+            visible_tourists,
+        )
+
 
     # -----------------------------------------------------------------
     # Reward Pathways
     # -----------------------------------------------------------------
-    
-    def _calculate_reward(self, previous_health, previous_energy, previous_hunger):
-        return calculate_reward(self, previous_health, previous_energy, previous_hunger)
+
+    def _calculate_reward(
+        self,
+        previous_health,
+        previous_energy,
+        previous_hunger,
+    ):
+        return calculate_reward(
+            self,
+            previous_health,
+            previous_energy,
+            previous_hunger,
+        )
+
 
     def _encode_tourist_action(self, action):
         return encode_tourist_action(action)
-    
+
+
     def _encode_monkey_action(self, action):
         return encode_monkey_action(action)
 
+
     def _finalize_tourist_experience(self, world):
-        return finalize_tourist_experience(self, world)
+        return finalize_tourist_experience(
+            self,
+            world,
+        )
 
-    def _get_brain_state(self, world):
-        return get_brain_state(self,world)
 
-    def _get_brain_output(self, world):
-        return get_brain_output(self,world)
+    def _get_brain_state(
+        self,
+        world,
+        visible_food,
+        visible_monkeys,
+        visible_tourists,
+    ):
+        return get_brain_state(
+            self,
+            world,
+            visible_food,
+            visible_monkeys,
+            visible_tourists,
+        )
 
-    def _choose_brain_action(self, state, world):
-        return choose_brain_action(self,state,world)
+
+    def _get_brain_output(self, state):
+        return get_brain_output(
+            self,
+            state,
+        )
+
+
+    def _choose_brain_action(
+        self,
+        state,
+        visible_food,
+        visible_monkeys,
+        visible_tourists,
+    ):
+        valid_actions = self._get_valid_actions(
+            visible_food,
+            visible_monkeys,
+            visible_tourists,
+        )
+
+        return choose_brain_action(
+            self,
+            state,
+            valid_actions,
+        )
+
 
     def _finalize_brain_experience(self, world):
         return finalize_brain_experience(
@@ -960,8 +1177,10 @@ class Monkey:
             world,
         )
 
+
     def _train_brain(self):
         return train_brain(self)
+       
     # -----------------------------------------------------------------
     # API representation
     # -----------------------------------------------------------------

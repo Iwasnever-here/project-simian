@@ -28,10 +28,14 @@ from backend.simulation.agents.monkey.monkey_constants import (
 
 
 
-def get_valid_actions(monkey, world):
+def get_valid_actions(
+    monkey,
+    visible_food,
+    visible_monkeys,
+    visible_tourists,
+):
     valid_actions = ["wander"]
 
-    visible_food = world.get_visible_fruit_trees(monkey.x, monkey.y, VISION_RANGE)
     if visible_food or monkey.food_memory:
         valid_actions.append("seek_food")
 
@@ -41,7 +45,6 @@ def get_valid_actions(monkey, world):
     if monkey.energy <= SLEEP_ENERGY_THRESHOLD:
         valid_actions.append("seek_shelter")
 
-    visible_monkeys = world.get_visible_monkeys(monkey.id, monkey.x, monkey.y, VISION_RANGE)
     if visible_monkeys:
         valid_actions.extend([
             "approach_monkey",
@@ -50,7 +53,7 @@ def get_valid_actions(monkey, world):
             "confront_monkey",
             "socialise",
         ])
-    visible_tourists = world.get_visible_tourists(monkey.x, monkey.y, VISION_RANGE)
+
     if visible_tourists:
         valid_actions.extend([
             "investigate_tourist",
@@ -59,9 +62,12 @@ def get_valid_actions(monkey, world):
             "scare_tourist",
             "leave_tourist",
         ])
-        if any(tourist.items for tourist in visible_tourists):
-            valid_actions.append("grab_item")
 
+        if any(
+            tourist.items
+            for tourist in visible_tourists
+        ):
+            valid_actions.append("grab_item")
 
     return valid_actions
 
@@ -121,7 +127,196 @@ def finalize_tourist_experience(monkey, world):
     monkey.pending_tourist_reward = 0.0
     monkey.pending_tourist_done = False
 
-def get_brain_state(monkey, world):
+def get_brain_state(
+    monkey,
+    world,
+    visible_food,
+    visible_monkeys,
+    visible_tourists,
+):
+    # ---------------------------------------------------------
+    # Food
+    # ---------------------------------------------------------
+
+    if visible_food:
+        nearest_food = min(
+            visible_food,
+            key=lambda tree: monkey._chebyshev_distance(
+                tree.x,
+                tree.y,
+            ),
+        )
+
+        food_distance = monkey._chebyshev_distance(
+            nearest_food.x,
+            nearest_food.y,
+        )
+
+        food_visible = 1.0
+        food_distance_normalized = (
+            min(food_distance, VISION_RANGE)
+            / VISION_RANGE
+        )
+
+    else:
+        food_visible = 0.0
+        food_distance_normalized = 1.0
+
+    # ---------------------------------------------------------
+    # Monkeys
+    # ---------------------------------------------------------
+
+    if visible_monkeys:
+        nearest_monkey = min(
+            visible_monkeys,
+            key=lambda other: monkey._chebyshev_distance(
+                other.x,
+                other.y,
+            ),
+        )
+
+        monkey_distance = monkey._chebyshev_distance(
+            nearest_monkey.x,
+            nearest_monkey.y,
+        )
+
+        monkey_visible = 1.0
+        monkey_distance_normalized = (
+            min(monkey_distance, VISION_RANGE)
+            / VISION_RANGE
+        )
+
+    else:
+        monkey_visible = 0.0
+        monkey_distance_normalized = 1.0
+
+    # ---------------------------------------------------------
+    # Tourists
+    # ---------------------------------------------------------
+
+    if visible_tourists:
+        nearest_tourist = min(
+            visible_tourists,
+            key=lambda tourist: monkey._chebyshev_distance(
+                tourist.x,
+                tourist.y,
+            ),
+        )
+
+        tourist_distance = monkey._chebyshev_distance(
+            nearest_tourist.x,
+            nearest_tourist.y,
+        )
+
+        tourist_visible = 1.0
+
+        tourist_distance_normalized = (
+            min(tourist_distance, VISION_RANGE)
+            / VISION_RANGE
+        )
+
+        tourist_has_items = (
+            1.0
+            if nearest_tourist.items
+            else 0.0
+        )
+
+    else:
+        tourist_visible = 0.0
+        tourist_distance_normalized = 1.0
+        tourist_has_items = 0.0
+
+    return [
+        # Survival
+        monkey.hunger / MAX_HUNGER,
+        monkey.energy / MAX_ENERGY,
+        monkey.health / MAX_HEALTH,
+
+        # Genetic traits
+        monkey.boldness,
+        monkey.curiosity,
+        monkey.sociability,
+        monkey.memory,
+        monkey.aggression,
+
+        # Life stage
+        monkey.get_maturity_mod(),
+
+        # Time
+        1.0 if world.is_daytime() else 0.0,
+
+        # Food
+        food_visible,
+        food_distance_normalized,
+
+        # Other monkeys
+        monkey_visible,
+        monkey_distance_normalized,
+
+        # Tourists
+        tourist_visible,
+        tourist_distance_normalized,
+        tourist_has_items,
+
+        # Inventory
+        1.0 if monkey.held_items else 0.0,
+    ]
+
+def get_brain_output(monkey, state):
+    state_tensor = torch.tensor(
+        state,
+        dtype=torch.float32,
+    )
+
+    with torch.no_grad():
+        outputs = monkey.brain(
+            state_tensor
+        )
+
+    return outputs
+
+def choose_brain_action(
+    monkey,
+    state,
+    valid_actions,
+):
+    outputs = get_brain_output(
+        monkey,
+        state,
+    )
+
+    brain_actions = [
+        action
+        for action in valid_actions
+        if action in BRAIN_CONTROLLED_ACTIONS
+    ]
+
+    if random.random() < EPSILON:
+        return random.choice(brain_actions)
+
+    best_action = None
+    best_score = float("-inf")
+
+    for action in brain_actions:
+        action_index = encode_monkey_action(
+            action
+        )
+
+        score = outputs[action_index].item()
+
+        if score > best_score:
+            best_score = score
+            best_action = action
+
+    return best_action
+
+def finalize_brain_experience(monkey, world):
+    if (
+        monkey.pending_brain_state is None
+        or monkey.pending_brain_action is None
+    ):
+        return
+
     visible_food = world.get_visible_fruit_trees(
         monkey.x,
         monkey.y,
@@ -141,167 +336,12 @@ def get_brain_state(monkey, world):
         VISION_RANGE,
     )
 
-        # food stuff here
-    if visible_food:
-        nearest_food = min(
-            visible_food,
-            key= lambda tree: monkey._chebyshev_distance(tree.x, tree.y)
-        )
-
-        food_distance = monkey._chebyshev_distance(
-            nearest_food.x,
-            nearest_food.y,
-        )
-
-        food_visible = 1.0
-        food_distance_normalized = min(food_distance, VISION_RANGE) / VISION_RANGE
-    else:
-        food_visible = 0.0
-        food_distance_normalized = 1.0
-
-
-        # monkey stuff here
-    if visible_monkeys:
-        nearest_monkey = min(
-            visible_monkeys,
-            key=lambda other: monkey._chebyshev_distance(
-                other.x,
-                other.y,
-            )
-        )
-        monkey_distance = monkey._chebyshev_distance(
-            nearest_monkey.x,
-            nearest_monkey.y,
-        )
-
-        monkey_visible = 1.0
-        monkey_distance_normalized = min(monkey_distance, VISION_RANGE) / VISION_RANGE
-    else:
-        monkey_visible = 0.0
-        monkey_distance_normalized = 1.0
-
-        # tourist stuff here
-    if visible_tourists:
-        nearest_tourist = min(
-            visible_tourists,
-            key=lambda tourist: monkey._chebyshev_distance(
-                tourist.x,
-                tourist.y,
-            ),
-        )
-
-        tourist_distance = monkey._chebyshev_distance(
-            nearest_tourist.x,
-            nearest_tourist.y,
-        )
-
-        tourist_visible = 1.0
-        tourist_distance_normalized = min(
-            tourist_distance,
-            VISION_RANGE,
-        ) / VISION_RANGE
-
-        tourist_has_items = (
-            1.0
-            if nearest_tourist.items
-            else 0.0
-        )
-
-    else:
-        tourist_visible = 0.0
-        tourist_distance_normalized = 1.0
-        tourist_has_items = 0.0
-
-        # now the rest
-
-     
-    return [
-            # Survival
-        monkey.hunger / MAX_HUNGER,
-        monkey.energy / MAX_ENERGY,
-        monkey.health / MAX_HEALTH,
-
-            # Genetic traits
-        monkey.boldness,
-        monkey.curiosity,
-        monkey.sociability,
-        monkey.memory,
-        monkey.aggression,
-
-            # Life stage
-        monkey.get_maturity_mod(),
-
-            # Time
-        1.0 if world.is_daytime() else 0.0,
-
-            # Food
-        food_visible,
-        food_distance_normalized,
-
-            # Other monkeys
-        monkey_visible,
-        monkey_distance_normalized,
-
-            # Tourists
-        tourist_visible,
-        tourist_distance_normalized,
-        tourist_has_items,
-
-            # Inventory
-        1.0 if monkey.held_items else 0.0,
-    ]
-
-def get_brain_output(monkey, state):
-    state_tensor = torch.tensor(
-        state,
-        dtype=torch.float32,
-    )
-
-    with torch.no_grad():
-        outputs = monkey.brain(
-            state_tensor
-        )
-
-    return outputs
-
-def choose_brain_action(monkey,state,world):
-    outputs = get_brain_output(monkey,state,)
-
-    valid_actions = get_valid_actions(monkey,world,)
-
-    brain_actions = [
-        action
-        for action in valid_actions
-        if action in BRAIN_CONTROLLED_ACTIONS
-    ]
-
-    if random.random() < EPSILON:
-        return random.choice(brain_actions)
-
-    best_action = None
-    best_score = float("-inf")
-
-    for action in brain_actions:
-        action_index = encode_monkey_action(action)
-
-        score = outputs[action_index].item()
-
-        if score > best_score:
-            best_score = score
-            best_action = action
-
-    return best_action
-
-def finalize_brain_experience(monkey, world):
-    if (
-        monkey.pending_brain_state is None
-        or monkey.pending_brain_action is None
-    ):
-        return
-
     next_state = get_brain_state(
         monkey,
         world,
+        visible_food,
+        visible_monkeys,
+        visible_tourists,
     )
 
     experience = Experience(
@@ -423,9 +463,31 @@ def train_brain(monkey):
 
 
 def get_controlled_q_values(monkey, world):
+    visible_food = world.get_visible_fruit_trees(
+        monkey.x,
+        monkey.y,
+        VISION_RANGE,
+    )
+
+    visible_monkeys = world.get_visible_monkeys(
+        monkey.id,
+        monkey.x,
+        monkey.y,
+        VISION_RANGE,
+    )
+
+    visible_tourists = world.get_visible_tourists(
+        monkey.x,
+        monkey.y,
+        VISION_RANGE,
+    )
+
     state = get_brain_state(
         monkey,
         world,
+        visible_food,
+        visible_monkeys,
+        visible_tourists,
     )
 
     outputs = get_brain_output(

@@ -21,113 +21,49 @@ from backend.simulation.agents.tourists import Tourist
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
+
+import time
+
+from backend.simulation.world.world_constants import (
+    WATER_LEVEL,
+    SAND_LEVEL,
+    SNOW_LEVEL,
+    MOUNTAIN_LEVEL,
+    EDGE_FALLOFF_WIDTH,
+    EDGE_FALLOFF_STRENGTH,
+    TEMPLE_X,
+    TEMPLE_Y,
+    TEMPLE_WIDTH,
+    TEMPLE_HEIGHT,
+    TERRAIN_CODE,
+    CHUNK_SIZE,
+    ELEVATION_OCTAVES,
+    ELEVATION_BASE_SCALE,
+    ELEVATION_PERSISTENCE,
+    ELEVATION_LACUNARITY,
+    MOISTURE_OCTAVES,
+    MOISTURE_BASE_SCALE,
+    MOISTURE_PERSISTENCE,
+    MOISTURE_LACUNARITY,
+    TREE_SCALE,
+    FOREST_TREE_THRESHOLD,
+    GRASS_TREE_THRESHOLD,
+    FRUIT_TREE_THRESHOLD,
+    SPAWNABLE_TERRAIN_BLOCKLIST,
+    SPAWN_MAX_ATTEMPTS,
+    TOURIST_ARRIVAL_HOUR,
+    TOURISTS_PER_DAY,
+    MAX_TEMPLE_CAPACITY,
+    TICKS_PER_DAY,
+    WETLAND_MOISTURE,
+    FOREST_MOISTURE,
+    TREE_SPECIES_SCALE,
+  
+
+)
 # ---------------------------------------------------------------------
 # Chunk settings
 # ---------------------------------------------------------------------
-
-CHUNK_SIZE = 32
-
-# Single-character terrain codes keep chunk payloads compact.
-TERRAIN_CODE = {
-    "water": "w",
-    "sand": "s",
-    "grass": "g",
-    "forest": "f",
-    "wetland": "m",
-    "mountain": "r",
-    "snow": "n",
-}
-
-
-# ---------------------------------------------------------------------
-# Temple settings
-# ---------------------------------------------------------------------
-
-TEMPLE_X = 235
-TEMPLE_Y = 135
-TEMPLE_WIDTH = 12
-TEMPLE_HEIGHT = 10
-
-
-# ---------------------------------------------------------------------
-# Island shape
-# ---------------------------------------------------------------------
-
-EDGE_FALLOFF_WIDTH = 0.15
-EDGE_FALLOFF_STRENGTH = 1.4
-
-
-# ---------------------------------------------------------------------
-# Elevation bands
-# ---------------------------------------------------------------------
-
-WATER_LEVEL = -0.2
-SAND_LEVEL = -0.1
-MOUNTAIN_LEVEL = 0.35
-SNOW_LEVEL = 0.55
-
-
-# ---------------------------------------------------------------------
-# Moisture bands
-# ---------------------------------------------------------------------
-
-WETLAND_MOISTURE = 0.3
-FOREST_MOISTURE = 0.0
-
-
-# ---------------------------------------------------------------------
-# Fractal noise settings
-# ---------------------------------------------------------------------
-
-ELEVATION_OCTAVES = 5
-ELEVATION_BASE_SCALE = 0.015
-ELEVATION_PERSISTENCE = 0.5
-ELEVATION_LACUNARITY = 2.0
-
-MOISTURE_OCTAVES = 4
-MOISTURE_BASE_SCALE = 0.02
-MOISTURE_PERSISTENCE = 0.5
-MOISTURE_LACUNARITY = 2.0
-
-
-# ---------------------------------------------------------------------
-# Tree generation
-# ---------------------------------------------------------------------
-
-TREE_SCALE = 0.15
-TREE_SPECIES_SCALE = 0.05
-
-FOREST_TREE_THRESHOLD = 0.10
-GRASS_TREE_THRESHOLD = 0.30
-FRUIT_TREE_THRESHOLD = -0.30
-
-
-
-# ---------------------------------------------------------------------
-# Monkey spawning
-# ---------------------------------------------------------------------
-
-SPAWNABLE_TERRAIN_BLOCKLIST = {"water", "mountain", "snow"}
-SPAWN_MAX_ATTEMPTS = 200
-
-
-# ---------------------------------------------------------------------
-# Tourist spawning
-# ---------------------------------------------------------------------
-TOURIST_ARRIVAL_HOUR = 8
-TOURIST_DEPARTURE_HOUR = 17
-TOURISTS_PER_DAY = 20
-MAX_TEMPLE_CAPACITY = 10
-
-
-# ---------------------------------------------------------------------
-# World time settings
-# ---------------------------------------------------------------------
-
-TICKS_PER_DAY = 120
-DAY_START = 30
-NIGHT_START = 90
-
 
 
 class World:
@@ -216,6 +152,35 @@ class World:
         self.last_tourist_boat_day: int | None = None
 
         self.temple_tourists: set[int] = set()
+
+        # perfomace stats
+        self.profile = {
+            "world_update": 0.0,
+            "monkeys": 0.0,
+            "reproduction": 0.0,
+            "cleanup": 0.0,
+            "trees": 0.0,
+            "tourists": 0.0,
+        }
+
+        self.profile_samples = 0
+
+        self.monkey_profile = {
+            "total": 0.0,
+            "observation": 0.0,
+            "brain_state": 0.0,
+            "brain_inference": 0.0,
+            "action_execution": 0.0,
+            "training": 0.0,
+            "experience": 0.0,
+            "survival_reward": 0.0,
+            "tourist_logic": 0.0,
+            "tourist_experience": 0.0,
+            "movement": 0.0,
+            "sleep": 0.0,
+        }
+
+        self.monkey_profile_samples = 0
 
     # -----------------------------------------------------------------
     # Terrain generation
@@ -731,6 +696,8 @@ class World:
     # -----------------------------------------------------------------
 
     def update(self):
+        world_start = time.perf_counter()
+
         with self.lock:
             self.tick += 1
             self.total_tick += 1
@@ -739,13 +706,30 @@ class World:
                 self.tick = 0
                 self.day += 1
 
-
                 self._handle_new_day()
+
+            # Monkeys
+           
+            start = time.perf_counter()
 
             for monkey in self.monkeys.values():
                 monkey.update(self)
 
+            self.profile["monkeys"] += (
+                time.perf_counter() - start
+            )
+            # Reproduction
+            
+            start = time.perf_counter()
+
             self._handle_reproduction()
+
+            self.profile["reproduction"] += (
+                time.perf_counter() - start
+            )
+            # Dead monkey cleanup
+            
+            start = time.perf_counter()
 
             dead_ids = [
                 monkey_id
@@ -756,11 +740,42 @@ class World:
             for monkey_id in dead_ids:
                 del self.monkeys[monkey_id]
 
+            self.profile["cleanup"] += (
+                time.perf_counter() - start
+            )
+
+           
+            # Trees
+           
+            start = time.perf_counter()
+
             for tree in self.trees.values():
                 tree.update()
 
+            self.profile["trees"] += (
+                time.perf_counter() - start
+            )
+
+            
+            # Tourists
+           
+            start = time.perf_counter()
+
             self.update_tourists_arrivals()
             self.update_tourists()
+
+            self.profile["tourists"] += (
+                time.perf_counter() - start
+            )
+
+        self.profile["world_update"] += (
+            time.perf_counter() - world_start
+        )
+
+        self.profile_samples += 1
+
+        if self.profile_samples % 1000 == 0:
+            self._print_profile()
 
     def add_event(
         self,
@@ -1263,3 +1278,55 @@ class World:
         monkey.held_items.append(item)
 
         return True
+
+
+
+    ## printingn 
+    def _print_profile(self):
+        if self.profile_samples == 0:
+            return
+
+        samples = self.profile_samples
+
+        print("\n--- WORLD PERFORMANCE PROFILE ---")
+
+        for name, total_time in self.profile.items():
+            average_ms = (
+                total_time / samples
+            ) * 1000
+
+            print(
+                f"{name}: "
+                f"{average_ms:.3f} ms/tick"
+            )
+
+        print(
+            f"monkeys_alive: {len(self.monkeys)}"
+        )
+
+        print(
+            f"trees_loaded: {len(self.trees)}"
+        )
+
+        print(
+            f"tourists_alive: {len(self.tourists)}"
+        )
+
+        print("---------------------------------\n")
+
+
+        print("\n--- MONKEY PERFORMANCE PROFILE ---")
+
+        if self.monkey_profile_samples > 0:
+            for name, total_time in self.monkey_profile.items():
+                average_ms = (
+                    total_time
+                    / self.monkey_profile_samples
+                ) * 1000
+
+                print(
+                    f"{name}: "
+                    f"{average_ms:.3f} ms/monkey-update"
+                )
+
+        print("------------------------------------")
