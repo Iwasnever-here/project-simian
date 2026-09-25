@@ -167,7 +167,9 @@ class World:
 
         self.monkey_profile = {
             "total": 0.0,
-            "observation": 0.0,
+            "food_observation": 0.0,
+            "monkey_observation": 0.0,
+            "tourist_observation": 0.0,
             "brain_state": 0.0,
             "brain_inference": 0.0,
             "action_execution": 0.0,
@@ -433,12 +435,23 @@ class World:
 
             return nearest_tree
 
-    def get_visible_fruit_trees(self, x, y, vision_range):
+    def get_visible_fruit_trees(
+        self,
+        x,
+        y,
+        vision_range,
+    ):
         min_x = max(0, x - vision_range)
-        max_x = min(self.width - 1, x + vision_range)
+        max_x = min(
+            self.width - 1,
+            x + vision_range,
+        )
 
         min_y = max(0, y - vision_range)
-        max_y = min(self.height - 1, y + vision_range)
+        max_y = min(
+            self.height - 1,
+            y + vision_range,
+        )
 
         min_cx = min_x // self.chunk_size
         max_cx = max_x // self.chunk_size
@@ -447,26 +460,45 @@ class World:
         max_cy = max_y // self.chunk_size
 
         with self.lock:
+            # Make sure nearby tree chunks exist.
             for cy in range(min_cy, max_cy + 1):
                 for cx in range(min_cx, max_cx + 1):
-                    self._ensure_trees_for_chunk(cx, cy)
+                    self._ensure_trees_for_chunk(
+                        cx,
+                        cy,
+                    )
 
             visible = []
 
-            for tree in self.trees.values():
-                if not tree.alive:
-                    continue
+            # Only inspect tiles inside vision range.
+            for tree_y in range(
+                min_y,
+                max_y + 1,
+            ):
+                for tree_x in range(
+                    min_x,
+                    max_x + 1,
+                ):
+                    tree = self.trees.get(
+                        (tree_x, tree_y)
+                    )
 
-                if tree.fruit <= 0:
-                    continue
+                    if tree is None:
+                        continue
 
-                distance = max(
-                    abs(tree.x - x),
-                    abs(tree.y - y),
-                )
+                    if not tree.alive:
+                        continue
 
-                if distance <= vision_range:
-                    visible.append(tree)
+                    if tree.fruit <= 0:
+                        continue
+
+                    distance = max(
+                        abs(tree.x - x),
+                        abs(tree.y - y),
+                    )
+
+                    if distance <= vision_range:
+                        visible.append(tree)
 
             return visible
 

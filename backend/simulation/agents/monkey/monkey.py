@@ -253,10 +253,25 @@ class Monkey:
                 VISION_RANGE,
             )
 
+            world.monkey_profile["food_observation"] += (
+                time.perf_counter() - start
+            )
+
+
+            start = time.perf_counter()
+
             visible_monkeys = self._observe_monkeys(world)
+
+            world.monkey_profile["monkey_observation"] += (
+                time.perf_counter() - start
+            )
+
+
+            start = time.perf_counter()
+
             visible_tourists = self._observe_tourists(world)
 
-            world.monkey_profile["observation"] += (
+            world.monkey_profile["tourist_observation"] += (
                 time.perf_counter() - start
             )
 
