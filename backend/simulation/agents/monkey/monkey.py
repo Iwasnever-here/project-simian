@@ -160,6 +160,7 @@ class Monkey:
     starving_ticks: int = 0
     exhausted_ticks: int = 0
     alive: bool = True
+    death_cause: str | None = None
     target_monkey_id: int | None = None
     social_decision_cooldown: int = 0
     tourist_interaction_ticks: int = 0
@@ -895,21 +896,27 @@ class Monkey:
             self.exhausted_ticks = 0
 
         if self.starving_ticks >= MAX_STARVING_TICK:
-            self.take_damage(STARVATION_DAMAGE)
-            # self.alive = False
+            self.take_damage(
+                STARVATION_DAMAGE,
+                cause="starvation",
+            )
             return
 
         if self.exhausted_ticks >= MAX_EXHAUSTED_TICK:
-            self.take_damage(EXHAUST_DAMAGE)
+            self.take_damage(
+                EXHAUST_DAMAGE,
+                cause="exhaustion",
+            )
             return
 
         if self.age >= MAX_AGE_DAYS:
-            self.die()
+            self.die("old_age")
 
     def take_damage(
         self,
         amount: float,
         apply_vulnerability: bool = True,
+        cause: str = "damage",
     ):
         if amount <= 0:
             return
@@ -923,7 +930,7 @@ class Monkey:
         )
 
         if self.health <= 0:
-            self.die()
+            self.die(cause)
 
     def heal(self, amount: float):
         if amount <= 0:
@@ -937,7 +944,11 @@ class Monkey:
     def is_dead(self):
         return self.health <= 0
 
-    def die(self):
+    def die(self, cause="unknown"):
+        if not self.alive:
+            return
+
+        self.death_cause = cause
         self.health = 0.0
         self.alive = False
         self.clear_target()

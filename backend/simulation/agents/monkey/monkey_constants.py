@@ -45,7 +45,7 @@ MONKEY_ACTIONS = [
 # Hunger and food
 # ---------------------------------------------------------------------
 
-HUNGER_PER_TICK = 0.5
+HUNGER_PER_TICK = 0.25
 FOOD_SEEK_THRESHOLD = 60.0
 MAX_HUNGER = 100.0
 
@@ -59,7 +59,7 @@ FOOD_MEMORY_COOLDOWN_TICKS = 20
 # Energy and sleep
 # ---------------------------------------------------------------------
 
-SLEEP_ENERGY_THRESHOLD = 30.0
+SLEEP_ENERGY_THRESHOLD = 50.0
 WAKE_ENERGY_THRESHOLD = 80.0
 MAX_ENERGY = 100.0
 SLEEP_ENERGY_RECOVERY = 1.0
@@ -93,7 +93,7 @@ EXHAUST_DAMAGE = 1.0
 
 INFANT_MAX_AGE = 50
 JUVENILE_MAX_AGE = 100
-ELDERLY_MIN_AGE = 300
+ELDERLY_MIN_AGE = 500
 
 MIN_REPRODUCTION_ENERGY = 50.0
 MIN_REPRODUCTION_HEALTH = 50.0

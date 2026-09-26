@@ -102,6 +102,9 @@ class World:
         self.next_monkey_id = 1
         self.total_monkeys_created = 0
 
+        self.demographic_log_interval = 25
+        self.births_since_demographic_log = 0
+
         # Temple entrance and boat landing derived from the temple
         # constants (there is no separate `self.temple` object).
         # Must be set before terrain/monkey generation below, since
@@ -183,6 +186,14 @@ class World:
         }
 
         self.monkey_profile_samples = 0
+
+        self.deaths_since_demographic_log = {
+            "starvation": 0,
+            "exhaustion": 0,
+            "old_age": 0,
+            "damage": 0,
+            "unknown": 0,
+        }
 
     # -----------------------------------------------------------------
     # Terrain generation
@@ -669,6 +680,7 @@ class World:
             paired_ids.add(partner.id)
 
             new_monkeys.append(child)
+            self.births_since_demographic_log += 1
 
             self.add_event(
                 event_type="birth",
@@ -770,7 +782,24 @@ class World:
             ]
 
             for monkey_id in dead_ids:
+                monkey = self.monkeys[monkey_id]
+
+                cause = getattr(
+                    monkey,
+                    "death_cause",
+                    "unknown",
+                )
+
+                self.deaths_since_demographic_log[cause] = (
+                    self.deaths_since_demographic_log.get(
+                        cause,
+                        0,
+                    )
+                    + 1
+                )
+
                 del self.monkeys[monkey_id]
+            
 
             self.profile["cleanup"] += (
                 time.perf_counter() - start
@@ -838,6 +867,9 @@ class World:
     def _handle_new_day(self):
         for monkey in self.monkeys.values():
             monkey.age += 1
+
+        if self.day % self.demographic_log_interval == 0:
+            self._print_demographic_profile()
 
     def get_hour_of_day(self):
         return (self.tick / TICKS_PER_DAY) * 24
@@ -1362,3 +1394,109 @@ class World:
                 )
 
         print("------------------------------------")
+
+
+    def _print_demographic_profile(self):
+        stages = {
+            "infant": 0,
+            "juvenile": 0,
+            "adult": 0,
+            "elderly": 0,
+        }
+
+        adult_males = 0
+        adult_females = 0
+        reproduction_ready = 0
+
+        for monkey in self.monkeys.values():
+            if not monkey.alive:
+                continue
+
+            stage = monkey.get_life_stage()
+
+            stages[stage] += 1
+
+            if stage == "adult":
+                if monkey.gender == "male":
+                    adult_males += 1
+                elif monkey.gender == "female":
+                    adult_females += 1
+
+                if monkey.can_reproduce(
+                    self.total_tick
+                ):
+                    reproduction_ready += 1
+
+        total_alive = sum(stages.values())
+
+        print(
+            "\n--- POPULATION PROFILE ---"
+        )
+
+        print(
+            f"day: {self.day}"
+        )
+
+        print(
+            f"population: {total_alive}"
+        )
+
+        print(
+            f"infants: {stages['infant']}"
+        )
+
+        print(
+            f"juveniles: {stages['juvenile']}"
+        )
+
+        print(
+            f"adults: {stages['adult']}"
+        )
+
+        print(
+            f"elderly: {stages['elderly']}"
+        )
+
+        print(
+            f"adult_males: {adult_males}"
+        )
+
+        print(
+            f"adult_females: {adult_females}"
+        )
+
+        print(
+            f"reproduction_ready: "
+            f"{reproduction_ready}"
+        )
+
+        print(
+            f"births_last_"
+            f"{self.demographic_log_interval}_days: "
+            f"{self.births_since_demographic_log}"
+        )
+
+        print(
+            "--------------------------\n"
+        )
+
+        self.births_since_demographic_log = 0
+
+        print(
+            f"deaths_last_"
+            f"{self.demographic_log_interval}_days: "
+            f"{sum(self.deaths_since_demographic_log.values())}"
+        )
+
+        for cause, count in self.deaths_since_demographic_log.items():
+            print(
+                f"deaths_{cause}: {count}"
+            )
+
+        self.deaths_since_demographic_log = {
+            "starvation": 0,
+            "exhaustion": 0,
+            "old_age": 0,
+            "damage": 0,
+            "unknown": 0,
+        }
