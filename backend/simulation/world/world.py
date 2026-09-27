@@ -141,7 +141,7 @@ class World:
 
         self._thumbnail = self._build_thumbnail()
 
-        for _ in range(300):
+        for _ in range(100):
             self.spawn_random_monkey()
 
         # Simulation events

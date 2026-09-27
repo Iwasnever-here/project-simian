@@ -318,8 +318,14 @@ class Monkey:
             # -----------------------------------------------------
             # Behaviour
             # -----------------------------------------------------
-
-            if self.should_follow_mother():
+            if (
+                self.get_life_stage() == "infant"
+                and self.should_follow_mother()
+                and self.energy <= SLEEP_ENERGY_THRESHOLD
+            ):
+                self._start_sleeping()
+                
+            elif self.should_follow_mother():
                 start = time.perf_counter()
 
                 self.follow_mother(world)
