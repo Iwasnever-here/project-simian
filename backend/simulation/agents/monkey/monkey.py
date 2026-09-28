@@ -1042,6 +1042,26 @@ class Monkey:
         if not self.can_reproduce(current_tick) or not other.can_reproduce(current_tick):
             return False
 
+        if(
+            self.parent_ids is not None
+            and other.id in self.parent_ids
+        ):
+            return False
+
+        if (
+            other.parent_ids is not None
+            and self.id in other.parent_ids
+        ):
+            return False
+
+        if (
+            self.parent_ids is not None
+            and other.parent_ids is not None
+        ):
+            shared_parents = set(self.parent_ids) & set(other.parent_ids)
+            if shared_parents:
+                return False
+
         return True
 
     # -----------------------------------------------------------------
