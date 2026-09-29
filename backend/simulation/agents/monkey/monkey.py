@@ -88,7 +88,11 @@ from backend.simulation.agents.monkey.monkey_social import (
     observe_monkeys,
     choose_social_target,
     desired_social_distance,
-    handle_social_interaction,
+    approach_monkey,
+    follow_monkey,
+    confront_monkey,
+    socialise_monkey,
+    avoid_monkey,
     step_away_from,
     flee_from,
     confront,
@@ -405,11 +409,57 @@ class Monkey:
                         self._wander(world)
 
                 elif brain_action == "approach_monkey":
-                    handled = (
-                        self._handle_social_interaction(
-                            world,
-                            visible_monkeys,
-                        )
+                    handled = self._approach_monkey(
+                        world,
+                        visible_monkeys,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+
+                elif brain_action == "follow_monkey":
+                    handled = self._follow_monkey(
+                        world,
+                        visible_monkeys,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+
+                elif brain_action == "avoid_monkey":
+                    handled = self._avoid_monkey(
+                        world,
+                        visible_monkeys,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+
+                elif brain_action == "confront_monkey":
+                    handled = self._confront_monkey(
+                        world,
+                        visible_monkeys,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+
+                elif brain_action == "socialise":
+                    handled = self._socialise_monkey(
+                        world,
+                        visible_monkeys,
                     )
 
                     if not handled:
@@ -1080,8 +1130,24 @@ class Monkey:
     def _desired_social_distance(self, other):
         return desired_social_distance(self, other)
 
-    def _handle_social_interaction(self, world, visible_monkeys):
-        return handle_social_interaction(self, world, visible_monkeys)
+    def _approach_monkey( self, world, visible_monkeys,):
+        return approach_monkey( self, world, visible_monkeys,)
+
+
+    def _follow_monkey(self, world, visible_monkeys,):
+        return follow_monkey( self, world, visible_monkeys,)
+
+
+    def _avoid_monkey( self, world, visible_monkeys,):
+        return avoid_monkey( self, world, visible_monkeys,)
+
+
+    def _confront_monkey( self, world, visible_monkeys,):
+        return confront_monkey( self, world, visible_monkeys,)
+
+
+    def _socialise_monkey( self, world, visible_monkeys,):
+        return socialise_monkey( self, world, visible_monkeys,)
 
     def _step_away_from(self, world, other):
         step_away_from(self, world, other)

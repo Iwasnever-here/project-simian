@@ -156,6 +156,10 @@ BRAIN_CONTROLLED_ACTIONS = [
     "seek_food",
     "seek_shelter",
     "approach_monkey",
+    "avoid_monkey",
+    "follow_monkey",
+    "confront_monkey",
+    "socialise",
    
 ]
 
