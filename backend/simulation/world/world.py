@@ -102,6 +102,7 @@ class World:
         self.monkeys: dict[int, Monkey] = {}
         self.next_monkey_id = 1
         self.total_monkeys_created = 0
+        self.pending_births = []
 
         self.demographic_log_interval = 25
         self.births_since_demographic_log = 0
@@ -142,7 +143,7 @@ class World:
 
         self._thumbnail = self._build_thumbnail()
 
-        for _ in range(100):
+        for _ in range(300):
             self.spawn_random_monkey()
 
         # Simulation events
@@ -625,6 +626,52 @@ class World:
 
         return child
 
+    def try_reproduce_pair( self, monkey, partner,):
+        if not monkey.is_compatible_for_reproduction(
+            partner,
+            self.total_tick,
+        ):
+            return False
+
+        if random.random() > REPRODUCTION_SUCCESS_CHANCE:
+            return False
+
+        child = self.create_child_monkey(
+            monkey,
+            partner,
+        )
+
+        monkey.energy = max(
+            0.0,
+            monkey.energy - REPRODUCTION_ENERGY_COST,
+        )
+
+        partner.energy = max(
+            0.0,
+            partner.energy - REPRODUCTION_ENERGY_COST,
+        )
+
+        monkey.last_reproduction_tick = self.total_tick
+        partner.last_reproduction_tick = self.total_tick
+
+        self.pending_births.append(child)
+
+        self.births_since_demographic_log += 1
+
+        self.add_event(
+            event_type="birth",
+            message=f"{child.name} was born!",
+            data={
+                "child_id": child.id,
+                "parent_ids": [
+                    monkey.id,
+                    partner.id,
+                ],
+            },
+        )
+
+        return True
+
     def _handle_reproduction(self):
         monkeys = list(self.monkeys.values())
 
@@ -763,6 +810,11 @@ class World:
             for monkey in self.monkeys.values():
                 monkey.update(self)
 
+            for child in self.pending_births:
+                self.add_monkey(child)
+
+            self.pending_births.clear()
+
             self.profile["monkeys"] += (
                 time.perf_counter() - start
             )
@@ -770,7 +822,7 @@ class World:
             
             start = time.perf_counter()
 
-            self._handle_reproduction()
+            
 
             self.profile["reproduction"] += (
                 time.perf_counter() - start

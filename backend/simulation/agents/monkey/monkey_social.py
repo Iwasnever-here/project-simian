@@ -222,6 +222,8 @@ def socialise_monkey( monkey, world, visible_monkeys,):
 
     monkey._clear_movement_target()
 
+    world.try_reproduce_pair(monkey, other,)
+
     return True
 
 def step_away_from(monkey,  world, other,):
