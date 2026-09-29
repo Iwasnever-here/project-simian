@@ -58,6 +58,7 @@ from backend.simulation.world.world_constants import (
     WETLAND_MOISTURE,
     FOREST_MOISTURE,
     TREE_SPECIES_SCALE,
+    REPRODUCTION_SUCCESS_CHANCE,
   
 
 )
@@ -634,9 +635,7 @@ class World:
             if monkey.id in paired_ids:
                 continue
 
-            if not monkey.can_reproduce(
-                self.total_tick,
-            ):
+            if not monkey.can_reproduce(self.total_tick,):
                 continue
 
             available_monkeys = [
@@ -651,6 +650,11 @@ class World:
             )
 
             if partner is None:
+                continue
+            
+
+            # Reproduction attempt can fail.
+            if random.random() > REPRODUCTION_SUCCESS_CHANCE:
                 continue
 
             child = self.create_child_monkey(
