@@ -363,6 +363,7 @@ class Monkey:
                 start = time.perf_counter()
 
                 brain_action = self._choose_brain_action(
+                    world,
                     brain_state,
                     visible_food,
                     visible_monkeys,
@@ -1201,12 +1202,14 @@ class Monkey:
     
     def _get_valid_actions(
         self,
+        world,
         visible_food,
         visible_monkeys,
         visible_tourists,
     ):
         return get_valid_actions(
             self,
+            world,
             visible_food,
             visible_monkeys,
             visible_tourists,
@@ -1271,12 +1274,14 @@ class Monkey:
 
     def _choose_brain_action(
         self,
+        world,
         state,
         visible_food,
         visible_monkeys,
         visible_tourists,
     ):
         valid_actions = self._get_valid_actions(
+            world,
             visible_food,
             visible_monkeys,
             visible_tourists,

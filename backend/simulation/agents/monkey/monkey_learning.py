@@ -22,14 +22,35 @@ from backend.simulation.agents.monkey.monkey_constants import (
     GAMMA,
     BATCH_SIZE,
     MIN_TRAINING_EXPERIENCES,
+    SURVIVAL_LEARNING_DAYS,
+    BASIC_SOCIAL_LEARNING_DAYS
 )
 
 
+def get_curriculum_actions(day):
+    if day < SURVIVAL_LEARNING_DAYS:
+        return {
+            "wander",
+            "seek_food",
+            "seek_shelter",
+        }
+
+    if day < BASIC_SOCIAL_LEARNING_DAYS:
+        return {
+            "wander",
+            "seek_food",
+            "seek_shelter",
+            "approach_monkey",
+            "follow_monkey",
+        }
+
+    return set(BRAIN_CONTROLLED_ACTIONS)
 
 
 
 def get_valid_actions(
     monkey,
+    world,
     visible_food,
     visible_monkeys,
     visible_tourists,
@@ -68,6 +89,19 @@ def get_valid_actions(
             for tourist in visible_tourists
         ):
             valid_actions.append("grab_item")
+
+    allowed_actions = get_curriculum_actions(
+        world.day
+    )
+
+    valid_actions = [
+        action
+        for action in valid_actions
+        if (
+            action not in BRAIN_CONTROLLED_ACTIONS
+            or action in allowed_actions
+        )
+    ]
 
     return valid_actions
 
