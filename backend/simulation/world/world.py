@@ -11,6 +11,7 @@ from backend.simulation.agents.monkey.monkey import (
 )
 
 from backend.simulation.agents.monkey.monkey_constants import (
+    MONKEY_ACTIONS,
     REPRODUCTION_RANGE,
     REPRODUCTION_ENERGY_COST,
     MAX_HEALTH,
@@ -196,6 +197,11 @@ class World:
             "damage": 0,
             "unknown": 0,
         }
+
+        self.brain_action_counts = {
+            action :0 for action in MONKEY_ACTIONS
+        }
+        self.brain_action_samples = 0
 
     # -----------------------------------------------------------------
     # Terrain generation
@@ -1556,3 +1562,29 @@ class World:
             "damage": 0,
             "unknown": 0,
         }
+
+        print("\n--- BRAIN ACTION FREQUENCY ---")
+
+        if self.brain_action_samples > 0:
+            for action, count in self.brain_action_counts.items():
+                if count == 0:
+                    continue
+
+                percentage = (
+                    count / self.brain_action_samples
+                ) * 100
+
+                print(
+                    f"{action}: "
+                    f"{count} "
+                    f"({percentage:.1f}%)"
+                )
+
+        print("------------------------------")
+
+        self.brain_action_counts = {
+            action: 0
+            for action in MONKEY_ACTIONS
+        }
+
+        self.brain_action_samples = 0

@@ -14,6 +14,8 @@ from backend.simulation.agents.monkey.monkey_constants import (
 )
 
 
+
+
 def observe_monkeys(monkey, world):
     visible_monkeys = world.get_visible_monkeys(
         monkey.id,

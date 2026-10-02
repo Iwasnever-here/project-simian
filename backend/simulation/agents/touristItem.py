@@ -6,15 +6,43 @@ import random
 class TouristItem:
     name: str
     value: float
+    kind: str
+    hunger_restore: float | None = None
 
 
 TOURIST_ITEM_TYPES = [
-    TouristItem("banana", 1.0),
-    TouristItem("snack", 0.5),
-    TouristItem("sunglasses", 2.0),
-    TouristItem("phone", 3.0),
-    TouristItem("camera", 5.0),
-    TouristItem("bag", 1.5),
+    TouristItem(
+        name="banana",
+        value=1.0,
+        kind="food",
+        hunger_restore=30.0,
+    ),
+    TouristItem(
+        name="snack",
+        value=0.5,
+        kind="food",
+        hunger_restore=20.0,
+    ),
+    TouristItem(
+        name="sunglasses",
+        value=2.0,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="phone",
+        value=3.0,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="camera",
+        value=5.0,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="bag",
+        value=1.5,
+        kind="valuable",
+    ),
 ]
 
 

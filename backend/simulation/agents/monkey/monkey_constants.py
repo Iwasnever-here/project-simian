@@ -155,14 +155,22 @@ BRAIN_CONTROLLED_ACTIONS = [
     "wander",
     "seek_food",
     "seek_shelter",
+
     "approach_monkey",
     "avoid_monkey",
     "follow_monkey",
     "confront_monkey",
     "socialise",
-   
+
+    "investigate_tourist",
+    "watch_tourist",
+    "follow_tourist",
+    "scare_tourist",
+    "grab_item",
+    "leave_tourist",
 ]
 
 TRAINING_INTERVAL_TICKS = 100
 SURVIVAL_LEARNING_DAYS = 20
 BASIC_SOCIAL_LEARNING_DAYS = 35
+TOURIST_LEARNING_DAYS = 50

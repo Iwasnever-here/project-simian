@@ -369,6 +369,9 @@ class Monkey:
                     visible_monkeys,
                     visible_tourists,
                 )
+                world.brain_action_counts[brain_action] += 1
+                world.brain_action_samples += 1
+
 
                 world.monkey_profile["brain_inference"] += (
                     time.perf_counter() - start
@@ -467,6 +470,36 @@ class Monkey:
                         self.state = WANDER_STATE
                         self.clear_target()
                         self._wander(world)
+
+                elif brain_action == "investigate_tourist":
+                    handled = self._handle_tourist_investigation(
+                        world,
+                        visible_tourists,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
+                elif brain_action in {
+                    "watch_tourist",
+                    "follow_tourist",
+                    "scare_tourist",
+                    "grab_item",
+                    "leave_tourist",
+                }:
+                    handled = self._handle_brain_tourist_action(
+                        world,
+                        visible_tourists,
+                        brain_action,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.clear_target()
+                        self._wander(world)
+
 
                 elif brain_action == "wander":
                     self.state = WANDER_STATE
@@ -1162,6 +1195,63 @@ class Monkey:
     # -----------------------------------------------------------------
     # Monkey Behavior and Interaction
     # -----------------------------------------------------------------
+
+    def _handle_brain_tourist_action(
+        self,
+        world,
+        visible_tourists,
+        brain_action,
+    ):
+        if not visible_tourists:
+            return False
+
+        # Keep interacting with the current tourist if they're still visible.
+        tourist = next(
+            (
+                tourist
+                for tourist in visible_tourists
+                if tourist.id == self.target_tourist_id
+            ),
+            None,
+        )
+
+        # Otherwise choose the nearest visible tourist.
+        if tourist is None:
+            tourist = min(
+                visible_tourists,
+                key=lambda tourist:
+                    self._chebyshev_distance(
+                        tourist.x,
+                        tourist.y,
+                    ),
+            )
+
+        self.target_tourist_id = tourist.id
+
+        # Main brain action names -> existing tourist subsystem names.
+        action_map = {
+            "watch_tourist": "watch",
+            "follow_tourist": "follow",
+            "scare_tourist": "scare",
+            "grab_item": "grab_item",
+            "leave_tourist": "leave",
+        }
+
+        tourist_action = action_map.get(brain_action)
+
+        if tourist_action is None:
+            return False
+
+        result = self._execute_tourist_action(
+            world,
+            tourist,
+            tourist_action,
+        )
+
+        # Some of the existing tourist functions may return None
+        # after successfully changing state, so only explicit False
+        # counts as failure.
+        return result is not False
 
     def _observe_tourists(self, world):
         return observe_tourists(self, world)

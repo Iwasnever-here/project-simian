@@ -23,7 +23,8 @@ from backend.simulation.agents.monkey.monkey_constants import (
     BATCH_SIZE,
     MIN_TRAINING_EXPERIENCES,
     SURVIVAL_LEARNING_DAYS,
-    BASIC_SOCIAL_LEARNING_DAYS
+    BASIC_SOCIAL_LEARNING_DAYS,
+    TOURIST_LEARNING_DAYS,
 )
 
 
@@ -43,6 +44,32 @@ def get_curriculum_actions(day):
             "approach_monkey",
             "follow_monkey",
         }
+
+    if day < TOURIST_LEARNING_DAYS:
+        return {
+            "wander",
+            "seek_food",
+            "seek_shelter",
+            "approach_monkey",
+            "follow_monkey",
+            "avoid_monkey",
+            "confront_monkey",
+            "socialise",
+        }
+
+    return {
+        "wander",
+        "seek_food",
+        "seek_shelter",
+        "approach_monkey",
+        "follow_monkey",
+        "avoid_monkey",
+        "confront_monkey",
+        "socialise",
+        "investigate_tourist",
+        "watch_tourist",
+        "follow_tourist",
+    }
 
     return set(BRAIN_CONTROLLED_ACTIONS)
 
