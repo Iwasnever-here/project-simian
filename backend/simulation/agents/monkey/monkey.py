@@ -6,7 +6,6 @@ import time
 from backend.simulation.agents.monkey.monkey_learning import (
     get_valid_actions,
     calculate_reward,
-    encode_tourist_action,
     encode_monkey_action,
     finalize_tourist_experience,
     get_brain_state,
@@ -75,15 +74,11 @@ from backend.simulation.agents.monkey.monkey_tourists import (
     observe_tourists,
     choose_tourist_to_investigate,
     handle_tourist_investigation,
-    handle_tourist_interactions,
-    update_tourist_interaction_ticks,
     update_tourist_interaction_cooldown,
     grab_item_monkey,
-    choose_tourist_action,
     execute_tourist_action,
-    get_tourist_state,
+    get_target_tourist,
 )
-
 from backend.simulation.agents.monkey.monkey_social import (
     observe_monkeys,
     choose_social_target,
@@ -203,9 +198,10 @@ class Monkey:
     )
 
     last_training_loss: float | None = None
+    last_brain_action: str | None = None
 
     brain: MonkeyBrain = field(default_factory = lambda: MonkeyBrain(
-        input_size = 18,
+        input_size = 19,
         output_size = len(MONKEY_ACTIONS)
     ))
     
@@ -214,15 +210,16 @@ class Monkey:
     # Main update
     # -----------------------------------------------------------------
 
+    
     def update(self, world):
         update_start = time.perf_counter()
+
+        if not self.alive:
+            return
 
         previous_hunger = self.hunger
         previous_energy = self.energy
         previous_health = self.health
-
-        if not self.alive:
-            return
 
         self.moved_this_tick = False
 
@@ -262,7 +259,6 @@ class Monkey:
                 time.perf_counter() - start
             )
 
-
             start = time.perf_counter()
 
             visible_monkeys = self._observe_monkeys(world)
@@ -270,7 +266,6 @@ class Monkey:
             world.monkey_profile["monkey_observation"] += (
                 time.perf_counter() - start
             )
-
 
             start = time.perf_counter()
 
@@ -281,54 +276,16 @@ class Monkey:
             )
 
             # -----------------------------------------------------
-            # Tourist interaction
-            # -----------------------------------------------------
-
-            start = time.perf_counter()
-
-            if (
-                self.target_tourist_id is not None
-                and self.state in (
-                    "watching_tourist",
-                    "following_tourist",
-                    "scaring_tourist",
-                )
-            ):
-                if self._update_tourist_interaction_ticks():
-                    tourist = next(
-                        (
-                            tourist
-                            for tourist in visible_tourists
-                            if tourist.id == self.target_tourist_id
-                        ),
-                        None,
-                    )
-
-                    if tourist is None:
-                        self.state = "investigating_tourist"
-                        self.current_tourist_action = None
-                        self.pending_tourist_done = True
-
-                    else:
-                        self._handle_tourist_interactions(
-                            world,
-                            tourist,
-                        )
-
-            world.monkey_profile["tourist_logic"] += (
-                time.perf_counter() - start
-            )
-
-            # -----------------------------------------------------
             # Behaviour
             # -----------------------------------------------------
+
             if (
                 self.get_life_stage() == "infant"
                 and self.should_follow_mother()
                 and self.energy <= SLEEP_ENERGY_THRESHOLD
             ):
                 self._start_sleeping()
-                
+
             elif self.should_follow_mother():
                 start = time.perf_counter()
 
@@ -369,9 +326,9 @@ class Monkey:
                     visible_monkeys,
                     visible_tourists,
                 )
+
                 world.brain_action_counts[brain_action] += 1
                 world.brain_action_samples += 1
-
 
                 world.monkey_profile["brain_inference"] += (
                     time.perf_counter() - start
@@ -379,9 +336,7 @@ class Monkey:
 
                 self.pending_brain_state = brain_state
                 self.pending_brain_action = (
-                    self._encode_monkey_action(
-                        brain_action
-                    )
+                    self._encode_monkey_action(brain_action)
                 )
 
                 # -------------------------------------------------
@@ -389,6 +344,11 @@ class Monkey:
                 # -------------------------------------------------
 
                 start = time.perf_counter()
+
+                if brain_action != self.last_brain_action:
+                    self._clear_movement_target()
+
+                self.last_brain_action = brain_action
 
                 if brain_action == "seek_food":
                     self._handle_food_seeking(world)
@@ -398,19 +358,23 @@ class Monkey:
 
                 elif brain_action == "follow_mother":
                     if self.should_follow_mother():
-                        followed = self.follow_mother(
-                            world
-                        )
+                        followed = self.follow_mother(world)
 
                         if not followed:
                             self.state = WANDER_STATE
-                            self.clear_target()
+                            self._clear_movement_target()
+                            self.target_monkey_id = None
                             self._wander(world)
 
                     else:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
+
+                # -------------------------------------------------
+                # Monkey social actions
+                # -------------------------------------------------
 
                 elif brain_action == "approach_monkey":
                     handled = self._approach_monkey(
@@ -420,9 +384,9 @@ class Monkey:
 
                     if not handled:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
-
 
                 elif brain_action == "follow_monkey":
                     handled = self._follow_monkey(
@@ -432,9 +396,9 @@ class Monkey:
 
                     if not handled:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
-
 
                 elif brain_action == "avoid_monkey":
                     handled = self._avoid_monkey(
@@ -444,9 +408,9 @@ class Monkey:
 
                     if not handled:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
-
 
                 elif brain_action == "confront_monkey":
                     handled = self._confront_monkey(
@@ -456,9 +420,9 @@ class Monkey:
 
                     if not handled:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
-
 
                 elif brain_action == "socialise":
                     handled = self._socialise_monkey(
@@ -468,22 +432,67 @@ class Monkey:
 
                     if not handled:
                         self.state = WANDER_STATE
-                        self.clear_target()
+                        self._clear_movement_target()
+                        self.target_monkey_id = None
                         self._wander(world)
+
+                # -------------------------------------------------
+                # Tourist actions (brain controlled)
+                # -------------------------------------------------
+
+                elif brain_action == "investigate_tourist":
+                    handled = self._handle_tourist_investigation(
+                        world,
+                        visible_tourists,
+                    )
+
+                    if not handled:
+                        self.state = WANDER_STATE
+                        self.target_monkey_id = None
+                        self._clear_movement_target()
+                        self._wander(world)
+
+                elif brain_action in (
+                    "watch_tourist",
+                    "follow_tourist",
+                    "scare_tourist",
+                    "leave_tourist",
+                ):
+                    tourist = get_target_tourist(
+                        self,
+                        world,
+                        visible_tourists,
+                    )
+
+                    success = self._execute_tourist_action(
+                        world,
+                        tourist,
+                        brain_action,
+                    )
+
+                    if not success:
+                        self.state = WANDER_STATE
+                        self.target_monkey_id = None
+                        self._clear_movement_target()
+                        self._wander(world)
+
+                # -------------------------------------------------
+                # Wander
+                # -------------------------------------------------
 
                 elif brain_action == "wander":
                     self.state = WANDER_STATE
-                    self.clear_target()
+                    self._clear_movement_target()
+                    self.target_monkey_id = None
                     self._wander(world)
 
                 else:
                     self.state = WANDER_STATE
-                    self.clear_target()
+                    self.target_monkey_id = None
+                    self._clear_movement_target()
                     self._wander(world)
 
-                world.monkey_profile[
-                    "action_execution"
-                ] += (
+                world.monkey_profile["action_execution"] += (
                     time.perf_counter() - start
                 )
 
@@ -525,37 +534,16 @@ class Monkey:
         if (
             world.total_tick + self.id
         ) % TRAINING_INTERVAL_TICKS == 0:
+
             start = time.perf_counter()
 
-            self.last_training_loss = (
-                self._train_brain()
-            )
+            self.last_training_loss = self._train_brain()
 
             world.monkey_profile["training"] += (
                 time.perf_counter() - start
             )
 
-        # ---------------------------------------------------------
-        # Tourist experience
-        # ---------------------------------------------------------
-
-        start = time.perf_counter()
-
-        if self.pending_tourist_state is not None:
-            self.pending_tourist_reward += (
-                self.reward
-            )
-
-        if self.pending_tourist_done:
-            self._finalize_tourist_experience(
-                world
-            )
-
-        world.monkey_profile[
-            "tourist_experience"
-        ] += (
-            time.perf_counter() - start
-        )
+        
 
         # ---------------------------------------------------------
         # Total profiling
@@ -657,7 +645,7 @@ class Monkey:
                     FOOD_MEMORY_COOLDOWN_TICKS
                 )
 
-            self.clear_target()
+            self._clear_movement_target()
             self.state = SEEKING_FOOD_STATE
             return
 
@@ -680,7 +668,7 @@ class Monkey:
         )
 
         self.state = WANDER_STATE
-        self.clear_target()
+        self._clear_movement_target()
 
     # -----------------------------------------------------------------
     # Food memory
@@ -755,7 +743,7 @@ class Monkey:
             )
 
             if not self.path:
-                self.clear_target()
+                self._clear_movement_target()
                 return
 
         next_x, next_y = self.path.pop(0)
@@ -1179,11 +1167,6 @@ class Monkey:
     ):
         return handle_tourist_investigation(self, world, visible_tourists)
 
-    def _handle_tourist_interactions(self, world, tourist):
-        return handle_tourist_interactions(self, world, tourist)
-
-    def _update_tourist_interaction_ticks(self):
-       return update_tourist_interaction_ticks(self)
 
     def _update_tourist_interaction_cooldown(self):
        return update_tourist_interaction_cooldown(self)
@@ -1193,16 +1176,11 @@ class Monkey:
         return grab_item_monkey(self, world, tourist, item)
 
 
-    def _choose_tourist_action(self, tourist):
-        return choose_tourist_action(tourist)
 
     def _execute_tourist_action(self, world, tourist, action):
         return execute_tourist_action(self, world, tourist, action)
 
 
-    def _get_tourist_state(self, tourist):
-        return get_tourist_state(self, tourist)
-    
     def _get_valid_actions(
         self,
         world,
@@ -1237,8 +1215,7 @@ class Monkey:
         )
 
 
-    def _encode_tourist_action(self, action):
-        return encode_tourist_action(action)
+
 
 
     def _encode_monkey_action(self, action):

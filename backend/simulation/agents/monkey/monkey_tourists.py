@@ -4,17 +4,14 @@ import random
 from backend.simulation.agents.monkey.monkey_constants import (
     VISION_RANGE,
     SOCIAL_MEMORY_RECENCY_TICKS,
-    TOURIST_INTERACTION_DURATION,
     TOURIST_INTERACTION_COOLDOWN_TICKS,
     WANDER_STATE,
-    MAX_HUNGER,
-    MAX_ENERGY,
-    MAX_HEALTH,
 )
 
-from backend.simulation.agents.monkey.monkey_learning import (
-    encode_tourist_action,
-)
+
+# ============================================================
+# TOURIST OBSERVATION
+# ============================================================
 
 def observe_tourists(monkey, world):
     visible_tourists = world.get_visible_tourists(
@@ -25,8 +22,7 @@ def observe_tourists(monkey, world):
 
     for tourist in visible_tourists:
         visible_items = [
-            item.name
-            for item in tourist.items
+            item.name for item in tourist.items
         ]
 
         monkey.social_memory.remember_tourist(
@@ -40,41 +36,41 @@ def observe_tourists(monkey, world):
     return visible_tourists
 
 
+# ============================================================
+# TARGET SELECTION
+# ============================================================
 
 def choose_tourist_to_investigate(monkey, world):
+    memory = monkey.social_memory.known_tourists
+    cutoff = world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
+
+    # Keep the existing tourist while its memory is recent.
+    if monkey.target_tourist_id is not None:
+        remembered = memory.get(monkey.target_tourist_id)
+
+        if (
+            remembered is not None
+            and remembered.last_seen_tick is not None
+            and remembered.last_seen_tick >= cutoff
+        ):
+            return remembered
+
+        # Existing target is no longer remembered.
+        monkey.target_tourist_id = None
+        monkey._clear_movement_target()
+
+    # Cooldown prevents acquiring a new tourist.
     if monkey.tourist_interaction_cooldown > 0:
         return None
-        # Keep investigating the current target if the memory is still recent.
-    if monkey.target_tourist_id is not None:
-        remembered_tourist = monkey.social_memory.known_tourists.get(
-            monkey.target_tourist_id
+
+    candidates = [
+        remembered
+        for remembered in memory.values()
+        if (
+            remembered.last_seen_tick is not None
+            and remembered.last_seen_tick >= cutoff
         )
-
-        if remembered_tourist is not None:
-            if (
-                remembered_tourist.last_seen_tick
-                >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
-                and remembered_tourist.visible_items
-            ):
-                return remembered_tourist
-
-        monkey.target_tourist_id = None
-
-    candidates = []
-
-    for remembered_tourist in monkey.social_memory.known_tourists.values():
-        if remembered_tourist.last_seen_tick is None:
-            continue
-
-        if remembered_tourist.last_seen_tick < (
-            world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
-        ):
-            continue
-
-        if not remembered_tourist.visible_items:
-            continue
-
-        candidates.append(remembered_tourist)
+    ]
 
     if not candidates:
         return None
@@ -82,143 +78,210 @@ def choose_tourist_to_investigate(monkey, world):
     chosen = random.choice(candidates)
 
     monkey.target_tourist_id = chosen.tourist_id
+    monkey._clear_movement_target()
 
     return chosen
+
+
+def get_target_tourist(monkey, world, visible_tourists=None):
+    """
+    Return the selected tourist if currently visible.
+
+    Does not automatically replace the selected tourist
+    with another nearby tourist.
+    """
+    if monkey.target_tourist_id is None:
+        return None
+
+    if visible_tourists is None:
+        visible_tourists = world.get_visible_tourists(
+            monkey.x,
+            monkey.y,
+            VISION_RANGE,
+        )
+
+    return next(
+        (
+            tourist
+            for tourist in visible_tourists
+            if tourist.id == monkey.target_tourist_id
+        ),
+        None,
+    )
+
+
+# ============================================================
+# INVESTIGATE TOURIST
+# ============================================================
 
 def handle_tourist_investigation(
     monkey,
     world,
     visible_tourists,
 ):
-    remembered_tourist = choose_tourist_to_investigate(
+    remembered = choose_tourist_to_investigate(
         monkey,
-        world
+        world,
     )
 
-    if remembered_tourist is None:
+    if remembered is None:
         return False
 
     monkey.state = "investigating_tourist"
     monkey.target_monkey_id = None
 
-        # Check whether the remembered tourist is currently visible.
-    visible_tourist = next(
-        (
-            tourist
-            for tourist in visible_tourists
-            if tourist.id == remembered_tourist.tourist_id
-        ),
-        None,
+    tourist = get_target_tourist(
+        monkey,
+        world,
+        visible_tourists,
     )
 
-        # -------------------------------------------------------------
-        # Tourist is currently visible
-        # -------------------------------------------------------------
-    if visible_tourist is not None:
+    if tourist is not None:
         distance = monkey._chebyshev_distance(
-            visible_tourist.x,
-            visible_tourist.y,
+            tourist.x,
+            tourist.y,
         )
 
-            # Close enough to decide how to interact.
+        # Close enough to interact on a subsequent tick.
         if distance <= 3:
             monkey._clear_movement_target()
-
-            handle_tourist_interactions(
-                monkey,
-                world,
-                visible_tourist,
-            )
-
             return True
 
-            # Tourist has moved, so follow their current position.
-        if (
-            monkey.target_x != visible_tourist.x
-            or monkey.target_y != visible_tourist.y
-        ):
-            monkey.set_target(
-                world,
-                visible_tourist.x,
-                visible_tourist.y,
-            )
+        destination = (tourist.x, tourist.y)
 
-        monkey._move_toward_target(world)
-
-        return True
-
-        # -------------------------------------------------------------
-        # Tourist is no longer visible
-        # -------------------------------------------------------------
-
-        # Move toward the last place the monkey remembers seeing them.
-    if (
-        monkey.target_x != remembered_tourist.last_x
-        or monkey.target_y != remembered_tourist.last_y
-    ):
-        monkey.set_target(
-            world,
-            remembered_tourist.last_x,
-            remembered_tourist.last_y,
+    else:
+        # The tourist is out of sight.
+        # Search its last remembered location.
+        destination = (
+            remembered.last_x,
+            remembered.last_y,
         )
 
-        # We reached their remembered location and they aren't there.
-    if monkey._is_at_target():
-        monkey.clear_target()
-        monkey.state = WANDER_STATE
-        monkey.current_tourist_action = None
-        monkey.pending_tourist_done = True
+        # Reached the remembered location but tourist absent.
+        if (monkey.x, monkey.y) == destination:
+            monkey.target_tourist_id = None
+            monkey._clear_movement_target()
+            monkey.state = WANDER_STATE
+            return False
 
-        return False
+    # Recalculate the path only if the destination changes.
+    if (
+        monkey.target_x,
+        monkey.target_y,
+    ) != destination:
+        monkey.set_target(
+            world,
+            destination[0],
+            destination[1],
+        )
 
     monkey._move_toward_target(world)
 
     return True
 
-def handle_tourist_interactions(monkey, world, tourist):
-    if monkey.tourist_interaction_ticks == 0:
-        monkey.tourist_interaction_ticks = TOURIST_INTERACTION_DURATION
 
-    if monkey.current_tourist_action is None:
-        monkey.current_tourist_action = choose_tourist_action(tourist)
+# ============================================================
+# INDIVIDUAL TOURIST ACTIONS
+# ============================================================
 
-        monkey.pending_tourist_state = get_tourist_state(monkey, tourist)
-        monkey.pending_tourist_action = encode_tourist_action(
-            monkey.current_tourist_action
-        )
-        monkey.pending_tourist_id = tourist.id
-        monkey.pending_tourist_reward = 0.0
-        monkey.pending_tourist_done = False
+def watch_tourist(monkey, world, tourist):
+    if tourist is None:
+        return False
 
-    return execute_tourist_action(
-        monkey,
-        world,
-        tourist,
-        monkey.current_tourist_action,
+    distance = monkey._chebyshev_distance(
+        tourist.x,
+        tourist.y,
     )
 
-def update_tourist_interaction_ticks(monkey):
-    if monkey.tourist_interaction_ticks > 0:
-        monkey.tourist_interaction_ticks -= 1
-
-    if monkey.tourist_interaction_ticks <= 0:
-        monkey.pending_tourist_done = True
-
-        monkey.state = WANDER_STATE
-        monkey.current_tourist_action = None
-        monkey.pending_tourist_done = True
-        monkey.tourist_interaction_cooldown = TOURIST_INTERACTION_COOLDOWN_TICKS
-        monkey.clear_target()
-
+    # Must be close enough to watch.
+    if distance > 3:
         return False
+
+    monkey.state = "watching_tourist"
+
+    # Stop walking without forgetting the tourist.
+    monkey._clear_movement_target()
 
     return True
 
-def update_tourist_interaction_cooldown(monkey):
-    if monkey.tourist_interaction_cooldown > 0:
-        monkey.tourist_interaction_cooldown -= 1
+
+def follow_tourist(monkey, world, tourist):
+    if tourist is None:
+        return False
+
+    monkey.state = "following_tourist"
+
+    distance = monkey._chebyshev_distance(
+        tourist.x,
+        tourist.y,
+    )
+
+    # Remain close without standing directly on the tourist.
+    if distance <= 2:
+        monkey._clear_movement_target()
+        return True
+
+    destination = (tourist.x, tourist.y)
+
+    if (
+        monkey.target_x,
+        monkey.target_y,
+    ) != destination:
+        monkey.set_target(
+            world,
+            destination[0],
+            destination[1],
+        )
+
+    monkey._move_toward_target(world)
+
+    return True
 
 
+def scare_tourist(monkey, world, tourist):
+    if tourist is None:
+        return False
+
+    distance = monkey._chebyshev_distance(
+        tourist.x,
+        tourist.y,
+    )
+
+    if distance > 3:
+        return False
+
+    monkey.state = "scaring_tourist"
+    monkey._clear_movement_target()
+
+    # TODO: Add actual tourist fear/reaction logic.
+    # Currently records a scare attempt, not a tourist reaction.
+    return True
+
+
+def leave_tourist(monkey, world, tourist=None):
+    # Leaving works even if the tourist is no longer visible.
+    if monkey.target_tourist_id is None:
+        return False
+
+    monkey.state = WANDER_STATE
+    monkey.current_tourist_action = None
+    monkey.tourist_interaction_ticks = 0
+
+    monkey.tourist_interaction_cooldown = (
+        TOURIST_INTERACTION_COOLDOWN_TICKS
+    )
+
+    # Explicitly forget the tourist and current movement.
+    monkey.clear_target()
+
+    return True
+
+
+# ============================================================
+# GRAB ITEM
+# Kept for future development.
+# NOT included in the brain action dispatcher.
+# ============================================================
 
 def grab_item_monkey(monkey, world, tourist, item):
     return world.transfer_item_to_monkey(
@@ -228,74 +291,8 @@ def grab_item_monkey(monkey, world, tourist, item):
     )
 
 
-def choose_tourist_action(tourist):
-    actions = [
-        "watch",
-        "follow",
-        "scare",
-        "leave"
-    ]
-
-    if tourist.items:
-        actions.append("grab_item")
-
-    return random.choice(actions)
-
-
-def get_tourist_state(monkey, tourist):
-    distance = monkey._chebyshev_distance(
-        tourist.x,
-        tourist.y,
-    )
-
-    return [
-        monkey.hunger / MAX_HUNGER,
-        monkey.energy / MAX_ENERGY,
-        monkey.health / MAX_HEALTH,
-
-        monkey.boldness,
-        monkey.curiosity,
-        monkey.aggression,
-
-        min(distance, VISION_RANGE) / VISION_RANGE,
-        min(len(tourist.items), 5) / 5.0,
-    ]
-
-
-def watch_tourist(monkey, world, tourist):
-    monkey.state = "watching_tourist"
-    monkey._clear_movement_target()
-
-    return True
-
-
-def follow_tourist(monkey, world, tourist):
-    monkey.state = "following_tourist"
-
-    if (
-        monkey.target_x != tourist.x
-        or monkey.target_y != tourist.y
-    ):
-        monkey.set_target(
-            world,
-            tourist.x,
-            tourist.y,
-        )
-
-    monkey._move_toward_target(world)
-
-    return True
-
-
-def scare_tourist(monkey, world, tourist):
-    monkey.state = "scaring_tourist"
-
-    return True
-
-
 def grab_tourist_item(monkey, world, tourist):
-    if not tourist.items:
-        monkey.current_tourist_action = None
+    if tourist is None or not tourist.items:
         return False
 
     item = random.choice(tourist.items)
@@ -307,55 +304,70 @@ def grab_tourist_item(monkey, world, tourist):
         item,
     )
 
-    monkey.pending_tourist_done = True
-    monkey.current_tourist_action = None
-    monkey.tourist_interaction_ticks = 0
-    monkey.tourist_interaction_cooldown = (
-        TOURIST_INTERACTION_COOLDOWN_TICKS
-    )
-    monkey.clear_target()
+    if success:
+        monkey.tourist_interaction_cooldown = (
+            TOURIST_INTERACTION_COOLDOWN_TICKS
+        )
+        monkey.current_tourist_action = None
+        monkey.tourist_interaction_ticks = 0
+        monkey.clear_target()
 
     return success
 
 
-def leave_tourist(monkey, world, tourist):
-    monkey.state = WANDER_STATE
-    monkey.current_tourist_action = None
-    monkey.tourist_interaction_ticks = 0
-    monkey.tourist_interaction_cooldown = (
-        TOURIST_INTERACTION_COOLDOWN_TICKS
-    )
-    monkey.clear_target()
-    monkey.pending_tourist_done = True
-
-    return True
-
-
+# ============================================================
+# BRAIN ACTION DISPATCHER
+# ============================================================
 
 TOURIST_ACTION_HANDLERS = {
-    "watch": watch_tourist,
-    "follow": follow_tourist,
-    "scare": scare_tourist,
-    "grab_item": grab_tourist_item,
-    "leave": leave_tourist,
+    "watch_tourist": watch_tourist,
+    "follow_tourist": follow_tourist,
+    "scare_tourist": scare_tourist,
+    "leave_tourist": leave_tourist,
 }
 
 
 def execute_tourist_action(monkey, world, tourist, action):
+    """
+    Execute an action selected by the main MonkeyBrain.
+
+    All interactions except leave require the selected
+    tourist to be currently visible.
+    """
     handler = TOURIST_ACTION_HANDLERS.get(action)
 
+    monkey.last_tourist_action = action
+    monkey.current_tourist_action = action
+    monkey.last_tourist_action_success = False
+
     if handler is None:
-        monkey.last_tourist_action = action
-        monkey.last_tourist_action_success = False
+        monkey.current_tourist_action = None
         return False
 
-    success = handler(monkey, world, tourist)
+    # Leaving does not require current visibility.
+    if action != "leave_tourist":
+        if (
+            tourist is None
+            or tourist.id != monkey.target_tourist_id
+        ):
+            return False
 
-    monkey.last_tourist_action = action
+    success = bool(
+        handler(monkey, world, tourist)
+    )
+
     monkey.last_tourist_action_success = success
 
-    # Preserve the old return behaviour for leaving.
-    if action == "leave":
-        return False
+    if action == "leave_tourist":
+        monkey.current_tourist_action = None
 
     return success
+
+
+# ============================================================
+# TOURIST COOLDOWN
+# ============================================================
+
+def update_tourist_interaction_cooldown(monkey):
+    if monkey.tourist_interaction_cooldown > 0:
+        monkey.tourist_interaction_cooldown -= 1
