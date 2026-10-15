@@ -161,6 +161,8 @@ BRAIN_CONTROLLED_ACTIONS = [
     "follow_monkey",
     "confront_monkey",
     "socialise",
+
+    
 ]
 
 TRAINING_INTERVAL_TICKS = 100

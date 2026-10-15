@@ -1,5 +1,11 @@
 # Project Simian: Design Document
 
+# dumping ground
+# monkey vs monkey damage
+# polar bear hunting at night
+# tourists steal
+# 
+
 ## Core Idea
 
 ****Project Simian**** is an agent-based simulation exploring whether complex social and economic behaviour can emerge from relatively simple individual rules.

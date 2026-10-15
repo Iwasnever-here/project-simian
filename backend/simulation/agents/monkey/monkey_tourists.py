@@ -241,79 +241,6 @@ def choose_tourist_action(tourist):
 
     return random.choice(actions)
 
-def execute_tourist_action(monkey, world, tourist, action):
-    monkey.last_tourist_action = action
-
-    if action == "watch":
-        monkey.state = "watching_tourist"
-        monkey._clear_movement_target()
-        monkey.last_tourist_action_success = True
-        return True
-
-    if action == "follow":
-        monkey.state = "following_tourist"
-
-        if (
-            monkey.target_x != tourist.x
-            or monkey.target_y != tourist.y
-        ):
-            monkey.set_target(
-                world,
-                tourist.x,
-                tourist.y,
-            )
-
-        monkey._move_toward_target(world)
-        monkey.last_tourist_action_success = True
-        return True
-
-    if action == "scare":
-        monkey.state = "scaring_tourist"
-        monkey.last_tourist_action_success = True
-        return True
-
-    if action == "grab_item":
-        if not tourist.items:
-            monkey.last_tourist_action_success = False
-            monkey.current_tourist_action = None
-            return False
-
-        item = random.choice(tourist.items)
-
-        success = grab_item_monkey(
-            monkey,
-            world,
-            tourist,
-            item,
-        )
-
-        monkey.last_tourist_action_success = success
-
-        monkey.pending_tourist_done = True
-
-        monkey.current_tourist_action = None
-        monkey.tourist_interaction_ticks = 0
-        monkey.tourist_interaction_cooldown = (
-            TOURIST_INTERACTION_COOLDOWN_TICKS
-        )
-        monkey.clear_target()
-
-        return success
-
-    if action == "leave":
-        monkey.state = WANDER_STATE
-        monkey.current_tourist_action = None
-        monkey.tourist_interaction_ticks = 0
-        monkey.tourist_interaction_cooldown = (
-            TOURIST_INTERACTION_COOLDOWN_TICKS
-        )
-        monkey.clear_target()
-
-        monkey.pending_tourist_done = True
-
-        monkey.last_tourist_action_success = True
-        return False
-
 
 def get_tourist_state(monkey, tourist):
     distance = monkey._chebyshev_distance(
@@ -333,4 +260,102 @@ def get_tourist_state(monkey, tourist):
         min(distance, VISION_RANGE) / VISION_RANGE,
         min(len(tourist.items), 5) / 5.0,
     ]
-    
+
+
+def watch_tourist(monkey, world, tourist):
+    monkey.state = "watching_tourist"
+    monkey._clear_movement_target()
+
+    return True
+
+
+def follow_tourist(monkey, world, tourist):
+    monkey.state = "following_tourist"
+
+    if (
+        monkey.target_x != tourist.x
+        or monkey.target_y != tourist.y
+    ):
+        monkey.set_target(
+            world,
+            tourist.x,
+            tourist.y,
+        )
+
+    monkey._move_toward_target(world)
+
+    return True
+
+
+def scare_tourist(monkey, world, tourist):
+    monkey.state = "scaring_tourist"
+
+    return True
+
+
+def grab_tourist_item(monkey, world, tourist):
+    if not tourist.items:
+        monkey.current_tourist_action = None
+        return False
+
+    item = random.choice(tourist.items)
+
+    success = grab_item_monkey(
+        monkey,
+        world,
+        tourist,
+        item,
+    )
+
+    monkey.pending_tourist_done = True
+    monkey.current_tourist_action = None
+    monkey.tourist_interaction_ticks = 0
+    monkey.tourist_interaction_cooldown = (
+        TOURIST_INTERACTION_COOLDOWN_TICKS
+    )
+    monkey.clear_target()
+
+    return success
+
+
+def leave_tourist(monkey, world, tourist):
+    monkey.state = WANDER_STATE
+    monkey.current_tourist_action = None
+    monkey.tourist_interaction_ticks = 0
+    monkey.tourist_interaction_cooldown = (
+        TOURIST_INTERACTION_COOLDOWN_TICKS
+    )
+    monkey.clear_target()
+    monkey.pending_tourist_done = True
+
+    return True
+
+
+
+TOURIST_ACTION_HANDLERS = {
+    "watch": watch_tourist,
+    "follow": follow_tourist,
+    "scare": scare_tourist,
+    "grab_item": grab_tourist_item,
+    "leave": leave_tourist,
+}
+
+
+def execute_tourist_action(monkey, world, tourist, action):
+    handler = TOURIST_ACTION_HANDLERS.get(action)
+
+    if handler is None:
+        monkey.last_tourist_action = action
+        monkey.last_tourist_action_success = False
+        return False
+
+    success = handler(monkey, world, tourist)
+
+    monkey.last_tourist_action = action
+    monkey.last_tourist_action_success = success
+
+    # Preserve the old return behaviour for leaving.
+    if action == "leave":
+        return False
+
+    return success
