@@ -469,6 +469,17 @@ class Monkey:
                         tourist,
                         brain_action,
                     )
+                   
+                    print(
+                        f"[TOURIST ACTION] "
+                        f"day={world.day} "
+                        f"monkey={self.id} "
+                        f"action={brain_action} "
+                        f"success={success} "
+                        f"target={self.target_tourist_id} "
+                        f"tourist_visible={tourist is not None}",
+                        flush=True,
+                    )
 
                     if not success:
                         self.state = WANDER_STATE

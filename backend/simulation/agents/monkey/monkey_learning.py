@@ -40,8 +40,18 @@ def get_curriculum_actions(day):
 
     return set(BRAIN_CONTROLLED_ACTIONS) - {"grab_item"}
 
-def get_valid_actions(monkey, world, visible_food, visible_monkeys, visible_tourists):
+def get_valid_actions(
+    monkey,
+    world,
+    visible_food,
+    visible_monkeys,
+    visible_tourists,
+):
     valid_actions = ["wander"]
+
+    # ---------------------------------------------------------
+    # Survival actions
+    # ---------------------------------------------------------
 
     if visible_food or monkey.food_memory:
         valid_actions.append("seek_food")
@@ -52,34 +62,95 @@ def get_valid_actions(monkey, world, visible_food, visible_monkeys, visible_tour
     if monkey.energy <= SLEEP_ENERGY_THRESHOLD:
         valid_actions.append("seek_shelter")
 
+    # ---------------------------------------------------------
+    # Monkey social actions
+    # ---------------------------------------------------------
+
     if visible_monkeys:
         valid_actions.extend([
-            "approach_monkey", "avoid_monkey", "follow_monkey",
-            "confront_monkey", "socialise",
+            "approach_monkey",
+            "avoid_monkey",
+            "follow_monkey",
+            "confront_monkey",
+            "socialise",
         ])
 
-    # A tourist must be selected by investigate before other tourist actions.
+    # ---------------------------------------------------------
+    # Tourist actions
+    # ---------------------------------------------------------
+
+    # Find the selected tourist among currently visible tourists.
+    # Do not substitute another tourist for the selected target.
+    selected_tourist = next(
+        (
+            tourist
+            for tourist in visible_tourists
+            if tourist.id == monkey.target_tourist_id
+        ),
+        None,
+    )
+
     if monkey.target_tourist_id is None:
+
+        # A monkey must investigate before interacting.
+        # Cooldown prevents selecting a new tourist.
         if monkey.tourist_interaction_cooldown <= 0:
+
+            # Check whether the monkey remembers a recent tourist.
             recent_tourist = any(
                 record.last_seen_tick is not None
-                and record.last_seen_tick >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
+                and record.last_seen_tick
+                >= world.total_tick - SOCIAL_MEMORY_RECENCY_TICKS
                 for record in monkey.social_memory.known_tourists.values()
             )
+
+            # Investigation is available if a tourist is visible
+            # or remembered recently.
             if visible_tourists or recent_tourist:
                 valid_actions.append("investigate_tourist")
+
     else:
-        valid_actions.extend([
-            "investigate_tourist", "watch_tourist", "follow_tourist",
-            "scare_tourist", "leave_tourist",
-        ])
+
+        # A target is already selected.
+        # Investigation remains possible even when it is out of sight.
+        valid_actions.append("investigate_tourist")
+
+        # The monkey can always abandon its existing target.
+        valid_actions.append("leave_tourist")
+
+        # Interactions require the SELECTED tourist to be visible.
+        if selected_tourist is not None:
+
+            distance = monkey._chebyshev_distance(
+                selected_tourist.x,
+                selected_tourist.y,
+            )
+
+            # Follow is valid from any visible distance.
+            valid_actions.append("follow_tourist")
+
+            # Watch and scare require the tourist to be nearby.
+            if distance <= 3:
+                valid_actions.extend([
+                    "watch_tourist",
+                    "scare_tourist",
+                ])
+
+    # ---------------------------------------------------------
+    # Curriculum filtering
+    # ---------------------------------------------------------
 
     allowed_actions = get_curriculum_actions(world.day)
+
     return [
-        action for action in valid_actions
+        action
+        for action in valid_actions
         if action in MONKEY_ACTIONS
         and action != "grab_item"
-        and (action not in BRAIN_CONTROLLED_ACTIONS or action in allowed_actions)
+        and (
+            action not in BRAIN_CONTROLLED_ACTIONS
+            or action in allowed_actions
+        )
     ]
 
 def calculate_reward(monkey, previous_health, previous_energy, previous_hunger):
