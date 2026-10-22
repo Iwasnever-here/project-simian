@@ -4,7 +4,7 @@
 
 Project Simian currently has the foundations of the world simulation, autonomous monkey agents, reproduction and inheritance, social perception, memory, and the first tourist systems.
 
-The current development focus is moving from the base monkey ecosystem toward meaningful **monkey-tourist interactions**.
+The current development focus is **brain-controlled monkey-tourist interactions and food/item stealing**. Tourist investigation and interaction actions are now wired into the main neural network, but watching, following and scaring are rarely selected. The next milestone is one verified successful theft in the existing island simulation, without building a separate testing world.
 
 **---**
 
@@ -352,7 +352,9 @@ visible_items
 
 ### Next
 
-- [ ] Use tourist memory to influence monkey behaviour
+- [x] Use selected tourist memory to guide investigation toward a remembered location
+
+- [ ] Use tourist memory to influence longer-term strategy
 
 - [ ] Remember outcomes of tourist interactions
 
@@ -668,35 +670,42 @@ Current temple capacity:
 
 ## Tourist Items
 
-### In Progress
+### Implemented / Present in Code
 
-- [x] Tourist item concept
+- [x] `TouristItem` dataclass with `name`, `value`, `kind`, and optional `hunger_restore`
 
-- [x] Visible items represented in tourist memory
+- [x] Food items (`banana`, `snack`) and valuables (`sunglasses`, `phone`, `camera`, `bag`)
 
-- [ ] Finish dedicated tourist item system
+- [x] `generate_tourist_items()` samples 1–3 items from the catalogue
+
+- [x] `Tourist.items` inventory and item names in tourist observation/memory
+
+- [x] Existing item-transfer entry points (`grab_item_monkey`, `grab_tourist_item`) in monkey tourist logic
+
+### Still Needed / Verification
+
+- [ ] Verify `world.transfer_item_to_monkey()` correctly changes both inventories
+
+- [ ] Implement eating stolen food using `hunger_restore`
+
+- [ ] Add a brain-controlled `steal_item` action and distance/item availability mask
 
 - [ ] Dedicated frontend item component
 
-- [ ] Item steal difficulty
+- [ ] Item steal difficulty / success model (later)
 
-- [ ] Item value
+- [ ] Ensure generated tourist inventories and food offers support future exchange mechanic
 
-- [ ] Different item types
+Current item properties:
 
-- [ ] Tourist possession generation
-
-Planned item properties:
-
-```text
-
-name
-
-steal_score
-
-value
-
+```python
+name: str
+value: float
+kind: str   # "food" or "valuable"
+hunger_restore: float | None = None
 ```
+
+`steal_score` is not yet part of the item model.
 
 **---**
 
@@ -730,9 +739,17 @@ These traits should eventually produce behaviours such as:
 
 ## Theft
 
-### Not Yet Implemented
+### Mechanic Partially Scaffolded; Not Yet Verified End-to-End
+
+Already present: `grab_tourist_item()` calls `grab_item_monkey()`, which delegates to `world.transfer_item_to_monkey()`. No successful theft has yet been verified in a running test; the main brain does not currently select stealing.
 
 Planned:
+
+- [ ] Monkey can choose `steal_item` when its selected tourist is within range and has possessions
+
+- [ ] Confirm item transfers to monkey and disappears from tourist inventory
+
+- [ ] Consume stolen food and restore hunger
 
 - [ ] Monkey can attempt to steal visible item
 
@@ -806,52 +823,57 @@ experience remembered
 
 ### Implemented
 
-- [x] Per-monkey neural network brain
-- [x] Replay/experience memory
-- [x] Q-value based action selection
-- [x] Epsilon exploration
-- [x] Reward based on changes in hunger, health and energy
-- [x] Hunger reward scaled by current hunger need
-- [x] Periodic training rather than training every tick
-- [x] Brain-state encoding for survival state, traits, life stage, time, nearby food, nearby monkeys, tourists and inventory
-- [x] Valid-action filtering
-- [x] Brain-controlled actions expanded incrementally
+- [x] Per-monkey `MonkeyBrain` neural network, experience replay, Q-based selection and epsilon exploration
+- [x] 19-feature state encoding, including selected tourist target status
+- [x] Main-brain-controlled survival, social and tourist actions with valid-action filtering
+- [x] Curriculum gating (`SURVIVAL_LEARNING_DAYS`, `BASIC_SOCIAL_LEARNING_DAYS`, `TOURIST_LEARNING_DAYS`)
+- [x] Tourist actions wired into `Monkey.update()` through `monkey_tourists.py`
+- [x] Selected tourist persistence, remembered-position investigation and interaction cooldown
+- [x] Tourist visibility/distance masking in `get_valid_actions()` to avoid invisible-target watch/follow/scare attempts
+- [x] Survival reward based on hunger, health and energy changes
+- [x] Tourist reward parameters wired into `calculate_reward()` and `Monkey.update()` (investigation arrival, interaction success/failure)
+- [x] Periodic brain training and profiler instrumentation
 
-Current brain-controlled actions include:
-
-```text
-wander
-seek_food
-seek_shelter
-follow_mother
-approach_monkey
-```
-
-The wider monkey action vocabulary also contains:
+Current brain-controlled action vocabulary (check local constants before extending):
 
 ```text
-avoid_monkey
-follow_monkey
-confront_monkey
-socialise
-investigate_tourist
-watch_tourist
-follow_tourist
-scare_tourist
-grab_item
-leave_tourist
+wander, seek_food, seek_shelter,
+approach_monkey, avoid_monkey, follow_monkey, confront_monkey, socialise,
+investigate_tourist, watch_tourist, follow_tourist, scare_tourist, leave_tourist
 ```
 
-These wider actions are not all neural-network controlled yet. They are being introduced gradually so behaviour and reward effects can be tested one step at a time.
+`follow_mother` exists in the overall `MONKEY_ACTIONS` set but is handled primarily through infant logic. `grab_item` / `steal_item` is **not yet a brain-controlled action**.
 
-### Current Learning Work
+### Known Limitations
 
-- [ ] Continue expanding the brain-controlled action set
-- [ ] Improve reward design so actions are chosen for meaningful reasons
-- [ ] Prevent pathological policies such as seeking food when barely hungry
-- [ ] Consider a shared/batched brain architecture once current behaviour is stable
-- [ ] Consider centralised replay/training later
-- [ ] Keep emergent behaviour as the goal rather than directly rewarding specific interesting actions
+- [ ] Watch/follow/scare are rarely chosen even after investigation is available
+- [ ] Rewarded investigation does not guarantee continuation of an encounter: brain chooses afresh each tick
+- [ ] Repeated watch/follow successes can farm per-tick rewards; introduce once-per-event/progress signals
+- [ ] `scare_tourist` still needs verified tourist reaction integration and reward tied to that outcome
+- [ ] Q-learning bootstrap still considers all controlled actions instead of only next-state valid actions
+- [ ] Measure action availability vs selection, target arrival and interaction success separately
+- [ ] Introduce stealing and food consumption as meaningful survival incentives
+- [ ] Consider shared/batched brains later only if profiling justifies it
+
+### Recent Run (day 150)
+
+```text
+Population: 243 (185 adults, 44 infants, 14 juveniles)
+Deaths in last 25 days: 18 (12 starvation, 6 exhaustion)
+Brain action selections in report:
+  seek_food            390,899  (73.2%)
+  investigate_tourist      667  (0.1%)
+  watch_tourist              1
+  scare_tourist              7
+  leave_tourist            195
+  follow_tourist            not listed
+World update:          122.445 ms/tick
+Monkey updates:        120.424 ms/tick
+Per-monkey update:       0.494 ms
+Tourists at snapshot:  0 (expected if snapshot is after their daily departure)
+```
+
+These are **action-selection counts**, not numbers of successful interactions. The tourist action rates depend on how often selected tourists were visible and actions valid. A different run's death counts or action frequencies alone cannot demonstrate learning improvement.
 
 ---
 
@@ -1047,7 +1069,7 @@ SIMULATION_TICK_SECONDS = 1.0
 - [x] Monkey-update performance profiling
 - [x] Separate timings for observation, brain-state construction, inference, action execution, experience finalisation and training
 
-Initial world profile:
+Historical baseline world profile:
 
 ```text
 world_update: 948.397 ms/tick
@@ -1091,7 +1113,7 @@ training:          0.027 ms
 experience:        1.177 ms
 ```
 
-The next major performance target is the observation system, especially the repeated post-action observation used to construct the reinforcement-learning `next_state`.
+One remaining performance target is the observation system, especially the repeated post-action observation used to construct the reinforcement-learning `next_state`.
 
 ### Performance Targets
 
@@ -1203,28 +1225,14 @@ learned item-taking / exchange strategies
 long-run population and behavioural analysis
 ```
 
-The next major milestone is:
+The immediate milestone is:
 
-> **Run substantially longer simulations while the learned monkey brain gains new actions without simulation performance or population stability collapsing.**
+> **Demonstrate one real item theft from a tourist in the normal island simulation, with inventory transfer, edible-food consumption, and a brain-selectable action.**
+
+Longer-term performance and population stability testing remain important after the mechanic works.
 
 The learning system is already active. The priority is now to make the environment, reward structure and simulation architecture strong enough that additional learned behaviours remain computationally practical and behaviourally meaningful.
 
----
-
-# Next Steps
-
-1. [x] Add world and monkey performance profiling
-2. [x] Remove redundant pre-action observation scans
-3. [ ] Profile fruit, monkey and tourist observation separately
-4. [ ] Reduce the cost of post-action `next_state` observation
-5. [ ] Target < 500 ms/tick, then 250–300 ms/tick
-6. [ ] Continue long-run population stability testing after the juvenile-follow fix
-7. [ ] Add brain-controlled actions one at a time and validate reward behaviour
-8. [ ] Continue tourist possession → perception → generic interaction work
-9. [ ] Add meaningful tourist reactions and consequences
-10. [ ] Allow learned behaviour to discover useful item-taking strategies
-11. [ ] Add stronger experiment/statistics tooling for population and behaviour over time
-12. [ ] Consider shared/batched neural inference once simpler bottlenecks are removed
 
 ---
 
