@@ -211,6 +211,7 @@ class Monkey:
     # -----------------------------------------------------------------
 
     
+
     def update(self, world):
         update_start = time.perf_counter()
 
@@ -220,6 +221,11 @@ class Monkey:
         previous_hunger = self.hunger
         previous_energy = self.energy
         previous_health = self.health
+
+        # Tourist reward information for this tick.
+        tourist_action = None
+        tourist_success = False
+        reached_tourist = False
 
         self.moved_this_tick = False
 
@@ -365,7 +371,6 @@ class Monkey:
                             self._clear_movement_target()
                             self.target_monkey_id = None
                             self._wander(world)
-
                     else:
                         self.state = WANDER_STATE
                         self._clear_movement_target()
@@ -378,8 +383,7 @@ class Monkey:
 
                 elif brain_action == "approach_monkey":
                     handled = self._approach_monkey(
-                        world,
-                        visible_monkeys,
+                        world, visible_monkeys
                     )
 
                     if not handled:
@@ -390,8 +394,7 @@ class Monkey:
 
                 elif brain_action == "follow_monkey":
                     handled = self._follow_monkey(
-                        world,
-                        visible_monkeys,
+                        world, visible_monkeys
                     )
 
                     if not handled:
@@ -402,8 +405,7 @@ class Monkey:
 
                 elif brain_action == "avoid_monkey":
                     handled = self._avoid_monkey(
-                        world,
-                        visible_monkeys,
+                        world, visible_monkeys
                     )
 
                     if not handled:
@@ -414,8 +416,7 @@ class Monkey:
 
                 elif brain_action == "confront_monkey":
                     handled = self._confront_monkey(
-                        world,
-                        visible_monkeys,
+                        world, visible_monkeys
                     )
 
                     if not handled:
@@ -426,8 +427,7 @@ class Monkey:
 
                 elif brain_action == "socialise":
                     handled = self._socialise_monkey(
-                        world,
-                        visible_monkeys,
+                        world, visible_monkeys
                     )
 
                     if not handled:
@@ -437,20 +437,80 @@ class Monkey:
                         self._wander(world)
 
                 # -------------------------------------------------
-                # Tourist actions (brain controlled)
+                # Tourist investigation
                 # -------------------------------------------------
 
                 elif brain_action == "investigate_tourist":
+                    tourist_action = brain_action
+
+                    # Remember the existing target before investigation.
+                    previous_target_id = self.target_tourist_id
+
+                    # Check whether the monkey was already close
+                    # to its selected tourist before moving.
+                    previous_target = get_target_tourist(
+                        self,
+                        world,
+                        visible_tourists,
+                    )
+
+                    was_in_range = (
+                        previous_target is not None
+                        and self._chebyshev_distance(
+                            previous_target.x,
+                            previous_target.y,
+                        ) <= 3
+                    )
+
                     handled = self._handle_tourist_investigation(
                         world,
                         visible_tourists,
                     )
 
-                    if not handled:
+                    tourist_success = bool(handled)
+
+                    if handled:
+                        # The investigation handler may have selected
+                        # a new target or moved towards an existing one.
+                        selected_tourist = get_target_tourist(
+                            self,
+                            world,
+                            visible_tourists,
+                        )
+
+                        if selected_tourist is not None:
+                            distance = self._chebyshev_distance(
+                                selected_tourist.x,
+                                selected_tourist.y,
+                            )
+
+                            # Reward reaching interaction range once,
+                            # rather than rewarding every investigation
+                            # tick spent next to the same tourist.
+                            if distance <= 3:
+                                reached_tourist = (
+                                    not was_in_range
+                                    or previous_target_id
+                                    != self.target_tourist_id
+                                )
+                            if reached_tourist:
+                                print(
+                                    f"[TOURIST REACHED] "
+                                    f"day={world.day} "
+                                    f"monkey={self.id} "
+                                    f"tourist={self.target_tourist_id}",
+                                    flush=True,
+                                )
+
+                    else:
                         self.state = WANDER_STATE
                         self.target_monkey_id = None
                         self._clear_movement_target()
                         self._wander(world)
+
+                # -------------------------------------------------
+                # Tourist interactions
+                # -------------------------------------------------
 
                 elif brain_action in (
                     "watch_tourist",
@@ -458,6 +518,8 @@ class Monkey:
                     "scare_tourist",
                     "leave_tourist",
                 ):
+                    tourist_action = brain_action
+
                     tourist = get_target_tourist(
                         self,
                         world,
@@ -469,17 +531,8 @@ class Monkey:
                         tourist,
                         brain_action,
                     )
-                   
-                    print(
-                        f"[TOURIST ACTION] "
-                        f"day={world.day} "
-                        f"monkey={self.id} "
-                        f"action={brain_action} "
-                        f"success={success} "
-                        f"target={self.target_tourist_id} "
-                        f"tourist_visible={tourist is not None}",
-                        flush=True,
-                    )
+
+                    tourist_success = bool(success)
 
                     if not success:
                         self.state = WANDER_STATE
@@ -508,7 +561,7 @@ class Monkey:
                 )
 
         # ---------------------------------------------------------
-        # Survival / reward
+        # Survival and tourist reward
         # ---------------------------------------------------------
 
         start = time.perf_counter()
@@ -520,6 +573,9 @@ class Monkey:
             previous_health,
             previous_energy,
             previous_hunger,
+            tourist_action=tourist_action,
+            tourist_success=tourist_success,
+            reached_tourist=reached_tourist,
         )
 
         world.monkey_profile["survival_reward"] += (
@@ -554,8 +610,6 @@ class Monkey:
                 time.perf_counter() - start
             )
 
-        
-
         # ---------------------------------------------------------
         # Total profiling
         # ---------------------------------------------------------
@@ -565,6 +619,7 @@ class Monkey:
         )
 
         world.monkey_profile_samples += 1
+
 
     # -----------------------------------------------------------------
     # Hunger and food seeking
@@ -1217,14 +1272,19 @@ class Monkey:
         previous_health,
         previous_energy,
         previous_hunger,
+        tourist_action=None,
+        tourist_success=False,
+        reached_tourist=False,
     ):
         return calculate_reward(
             self,
             previous_health,
             previous_energy,
             previous_hunger,
+            tourist_action=tourist_action,
+            tourist_success=tourist_success,
+            reached_tourist=reached_tourist,
         )
-
 
 
 

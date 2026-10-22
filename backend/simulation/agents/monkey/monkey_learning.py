@@ -153,19 +153,72 @@ def get_valid_actions(
         )
     ]
 
-def calculate_reward(monkey, previous_health, previous_energy, previous_hunger):
+def calculate_reward(
+    monkey,
+    previous_health,
+    previous_energy,
+    previous_hunger,
+    tourist_action=None,
+    tourist_success=False,
+    reached_tourist=False,
+):
+    # -------------------------------------
+    # Survival reward
+    # -------------------------------------
+
     hunger_change = previous_hunger - monkey.hunger
     health_change = monkey.health - previous_health
     energy_change = monkey.energy - previous_energy
+
     hunger_need = previous_hunger / MAX_HUNGER
-    reward = (
-        hunger_change
-        * HUNGER_REWARD_WEIGHT
-        * hunger_need
+
+    survival_reward = (
+        hunger_change * HUNGER_REWARD_WEIGHT * hunger_need
         + health_change * HEALTH_REWARD_WEIGHT
         + energy_change * ENERGY_REWARD_WEIGHT
     )
-    return reward
+
+    # -------------------------------------
+    # Tourist behaviour reward
+    # -------------------------------------
+
+    tourist_reward = 0.0
+
+    if tourist_action == "investigate_tourist":
+        # Reward reaching interaction range,
+        # not merely choosing to investigate.
+        if reached_tourist:
+            tourist_reward += 0.3
+
+    elif tourist_action == "watch_tourist":
+        if tourist_success:
+            tourist_reward += 0.1
+
+    elif tourist_action == "follow_tourist":
+        if tourist_success:
+            tourist_reward += 0.2
+
+    elif tourist_action == "scare_tourist":
+        # For now, only a small reward for a valid attempt.
+        # Increase once tourists actually react.
+        if tourist_success:
+            tourist_reward += 0.1
+
+    elif tourist_action == "leave_tourist":
+        # Leaving should not automatically be rewarded or punished.
+        tourist_reward += 0.0
+
+    # Penalise invalid interactions.
+    if (
+        tourist_action is not None
+        and tourist_action != "leave_tourist"
+        and not tourist_success
+    ):
+        tourist_reward -= 0.2
+
+    return survival_reward + tourist_reward
+
+
 def encode_tourist_action(action):
     return TOURIST_ACTIONS.index(action)
 def encode_monkey_action(action):
