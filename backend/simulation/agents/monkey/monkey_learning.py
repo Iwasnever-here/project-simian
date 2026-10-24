@@ -136,6 +136,13 @@ def get_valid_actions(
                     "scare_tourist",
                 ])
 
+            if (
+                distance <= 3
+                and selected_tourist.items
+                and monkey.tourist_interaction_cooldown <= 0
+            ):
+                valid_actions.append("steal_item")
+
     # ---------------------------------------------------------
     # Curriculum filtering
     # ---------------------------------------------------------
@@ -354,8 +361,20 @@ def choose_brain_action(
     if not brain_actions:
         return "wander"
 
+    # TEMPORARY: Prefer stealing during testing.
+    DEBUG_FAVOUR_STEALING = True
+
+    if (
+        DEBUG_FAVOUR_STEALING
+        and "steal_item" in brain_actions
+        and random.random() < 0.5
+    ):
+        return "steal_item"
+
+    # Normal epsilon-greedy selection.
     if random.random() < EPSILON:
         return random.choice(brain_actions)
+    
     best_action = None
     best_score = float("-inf")
     for action in brain_actions:

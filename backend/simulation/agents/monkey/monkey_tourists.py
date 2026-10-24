@@ -314,7 +314,61 @@ def grab_tourist_item(monkey, world, tourist):
 
     return success
 
+def steal_item(monkey, world, tourist):
+    # No tourist or no possessions to steal.
+    if tourist is None or not tourist.items:
+        return False
 
+    # Stealing requires close proximity.
+    distance = monkey._chebyshev_distance(
+        tourist.x,
+        tourist.y,
+    )
+
+    if distance > 3:
+        return False
+
+    # Choose one of the tourist's possessions.
+    item = random.choice(tourist.items)
+
+    # Transfer ownership using the existing world method.
+    success = world.transfer_item_to_monkey(
+        monkey,
+        tourist,
+        item,
+    )
+
+    if not success:
+        return False
+
+    # If the stolen item is food, consume it immediately.
+    if item.kind == "food" and item.hunger_restore:
+        if item.kind == "food":
+            monkey.held_items.remove(item)
+
+            # Fully satisfy hunger when stealing food.
+            monkey.eat(monkey.hunger)
+
+    # Prevent immediately stealing another item.
+    monkey.tourist_interaction_cooldown = (
+        TOURIST_INTERACTION_COOLDOWN_TICKS
+    )
+
+    monkey.current_tourist_action = None
+    monkey.tourist_interaction_ticks = 0
+
+    # Forget the current tourist after stealing.
+    monkey.clear_target()
+
+    print(
+        f"[STEAL SUCCESS] "
+        f"monkey={monkey.id} "
+        f"tourist={tourist.id} "
+        f"item={item.name}",
+        flush=True,
+    )
+
+    return True
 # ============================================================
 # BRAIN ACTION DISPATCHER
 # ============================================================
@@ -324,6 +378,7 @@ TOURIST_ACTION_HANDLERS = {
     "follow_tourist": follow_tourist,
     "scare_tourist": scare_tourist,
     "leave_tourist": leave_tourist,
+    "steal_item": steal_item,  # NEW
 }
 
 
@@ -371,3 +426,4 @@ def execute_tourist_action(monkey, world, tourist, action):
 def update_tourist_interaction_cooldown(monkey):
     if monkey.tourist_interaction_cooldown > 0:
         monkey.tourist_interaction_cooldown -= 1
+

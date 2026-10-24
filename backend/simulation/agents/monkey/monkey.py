@@ -517,6 +517,7 @@ class Monkey:
                     "follow_tourist",
                     "scare_tourist",
                     "leave_tourist",
+                    "steal_item"  # NEW
                 ):
                     tourist_action = brain_action
 
