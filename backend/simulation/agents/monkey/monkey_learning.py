@@ -195,7 +195,9 @@ def calculate_reward(
         # Reward reaching interaction range,
         # not merely choosing to investigate.
         if reached_tourist:
-            tourist_reward += 0.3
+            tourist_reward += 0.3 * (
+                0.5 + monkey.curiosity
+            )
 
     elif tourist_action == "watch_tourist":
         if tourist_success:
@@ -209,11 +211,20 @@ def calculate_reward(
         # For now, only a small reward for a valid attempt.
         # Increase once tourists actually react.
         if tourist_success:
-            tourist_reward += 0.1
+            tourist_reward += 0.1 * (
+                0.5 + monkey.aggression)
 
     elif tourist_action == "leave_tourist":
         # Leaving should not automatically be rewarded or punished.
         tourist_reward += 0.0
+
+    elif tourist_action == "steal_item":
+        if tourist_success:
+            tourist_reward += 0.2 * (
+                0.5 + monkey.boldness
+            )
+        else:
+            tourist_reward -= 0.2
 
     # Penalise invalid interactions.
     if (

@@ -89,7 +89,7 @@ SPAWN_MAX_ATTEMPTS = 200
 # ---------------------------------------------------------------------
 TOURIST_ARRIVAL_HOUR = 8
 TOURIST_DEPARTURE_HOUR = 17
-TOURISTS_PER_DAY = 20
+TOURISTS_PER_DAY = 50
 MAX_TEMPLE_CAPACITY = 10
 
 
