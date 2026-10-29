@@ -177,14 +177,22 @@ def calculate_reward(
     health_change = monkey.health - previous_health
     energy_change = monkey.energy - previous_energy
 
-    hunger_need = previous_hunger / MAX_HUNGER
+    hunger_reward = 0.0
+
+    if hunger_change > 0 and previous_hunger >= 40:
+        hunger_need = previous_hunger / MAX_HUNGER
+
+        hunger_reward = (
+            hunger_change
+            * HUNGER_REWARD_WEIGHT
+            * hunger_need
+        )
 
     survival_reward = (
-        hunger_change * HUNGER_REWARD_WEIGHT * hunger_need
+        hunger_reward
         + health_change * HEALTH_REWARD_WEIGHT
         + energy_change * ENERGY_REWARD_WEIGHT
     )
-
     # -------------------------------------
     # Tourist behaviour reward
     # -------------------------------------
@@ -196,16 +204,19 @@ def calculate_reward(
         # not merely choosing to investigate.
         if reached_tourist:
             tourist_reward += 0.3 * (
-                0.5 + monkey.curiosity
+                0.5 + monkey.curiosity + monkey.sociability
             )
 
     elif tourist_action == "watch_tourist":
         if tourist_success:
-            tourist_reward += 0.1
+            tourist_reward += 0.1 * (
+                0.5 + monkey.curiosity + monkey.sociability
+            )
 
     elif tourist_action == "follow_tourist":
         if tourist_success:
-            tourist_reward += 0.2
+            tourist_reward += 0.2 * (
+                0.5 + monkey.sociability)
 
     elif tourist_action == "scare_tourist":
         # For now, only a small reward for a valid attempt.
@@ -216,12 +227,12 @@ def calculate_reward(
 
     elif tourist_action == "leave_tourist":
         # Leaving should not automatically be rewarded or punished.
-        tourist_reward += 0.0
+        tourist_reward += 0.0 
 
     elif tourist_action == "steal_item":
         if tourist_success:
             tourist_reward += 0.2 * (
-                0.5 + monkey.boldness
+                0.5 + monkey.boldness + monkey.curiosity + monkey.sociability
             )
         else:
             tourist_reward -= 0.2
