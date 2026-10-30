@@ -43,6 +43,38 @@ TOURIST_ITEM_TYPES = [
         value=1.5,
         kind="valuable",
     ),
+    TouristItem(
+        name="crisps",
+        value=2.0,
+        kind="food",
+        hunger_restore=30.0,
+        ),
+    TouristItem(
+        name="ice cream",
+        value=9.0,
+        kind="food",
+        hunger_restore=50.0,
+    ),
+    TouristItem(
+        name="computer mouse",
+        value=2.5,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="left shoe",
+        value=6.0,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="wallet",
+        value=20.0,
+        kind="valuable",
+    ),
+    TouristItem(
+        name="cap",
+        value=5.0,
+        kind="valuable",
+    ),
 ]
 
 
