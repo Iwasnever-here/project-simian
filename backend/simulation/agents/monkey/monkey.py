@@ -332,6 +332,15 @@ class Monkey:
                     visible_monkeys,
                     visible_tourists,
                 )
+                # Survival safeguard: finish seeking food when dangerously hungry.
+                if (
+                    self.hunger >= 70
+                    and self.last_brain_action == "seek_food"
+                    and self.target_x is not None
+                    and self.target_y is not None
+                    and brain_action not in ("seek_food", "seek_shelter")
+                ):
+                    brain_action = "seek_food"
 
                 world.brain_action_counts[brain_action] += 1
                 world.brain_action_samples += 1
@@ -352,6 +361,7 @@ class Monkey:
                 start = time.perf_counter()
 
                 if brain_action != self.last_brain_action:
+
                     self._clear_movement_target()
 
                 self.last_brain_action = brain_action

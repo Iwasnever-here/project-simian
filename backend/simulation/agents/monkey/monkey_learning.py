@@ -179,7 +179,7 @@ def calculate_reward(
 
     hunger_reward = 0.0
 
-    if hunger_change > 0 and previous_hunger >= 40:
+    if hunger_change > 0:
         hunger_need = previous_hunger / MAX_HUNGER
 
         hunger_reward = (
@@ -232,10 +232,11 @@ def calculate_reward(
     elif tourist_action == "steal_item":
         if tourist_success:
             tourist_reward += 0.2 * (
-                0.5 + monkey.boldness + monkey.curiosity + monkey.sociability
+                0.5
+                + monkey.boldness
+                + monkey.curiosity
+                + monkey.sociability
             )
-        else:
-            tourist_reward -= 0.2
 
     # Penalise invalid interactions.
     if (
@@ -278,6 +279,7 @@ def finalize_tourist_experience(monkey, world):
     monkey.pending_tourist_id = None
     monkey.pending_tourist_reward = 0.0
     monkey.pending_tourist_done = False
+    
 def get_brain_state(monkey, world, visible_food, visible_monkeys, visible_tourists):
     if visible_food:
         nearest_food = min(

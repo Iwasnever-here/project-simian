@@ -405,6 +405,7 @@ def execute_tourist_action(monkey, world, tourist, action):
             tourist is None
             or tourist.id != monkey.target_tourist_id
         ):
+            monkey.current_tourist_action = None
             return False
 
     success = bool(
