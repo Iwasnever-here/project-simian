@@ -51,6 +51,8 @@ class Tourist:
     alive: bool = True
     threat_monkey_id: int | None = None
     items: list[TouristItem] = field(default_factory=list)
+    # Exact stolen valuable -> thief ID; populated by world transfers.
+    stolen_valuables: dict[TouristItem, int] = field(default_factory=dict)
 
     def to_dict(self):
         return {

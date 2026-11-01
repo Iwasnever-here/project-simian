@@ -1,3 +1,4 @@
+import math
 import heapq
 import random
 import threading
@@ -19,6 +20,7 @@ from backend.simulation.agents.monkey.monkey_constants import (
 
 from backend.simulation.agents.touristItem import generate_tourist_items
 from backend.simulation.agents.tourists import Tourist
+from backend.simulation.agents.tradeOffer import TradeOffer
 from backend.simulation.names import generate_monkey_identity
 from backend.simulation.world.tile import Tile
 from backend.simulation.world.tree import Tree
@@ -154,6 +156,8 @@ class World:
         # tourists
         self.tourists: list[Tourist] = []
         self.next_tourist_id = 1
+        self.trade_offers: dict[int, TradeOffer] = {}
+        self.next_trade_offer_id = 1
 
         self.last_tourist_boat_day: int | None = None
 
@@ -1390,20 +1394,104 @@ class World:
         return nearby
 
     def transfer_item_to_monkey(self, monkey, tourist, item):
-        if item not in tourist.items:
-            return False
+        with self.lock:
+            if item not in tourist.items:
+                return False
 
-        distance = max(
-            abs(monkey.x - tourist.x),
-            abs(monkey.y - tourist.y),
+            distance = max(
+                abs(monkey.x - tourist.x),
+                abs(monkey.y - tourist.y),
+            )
+            if distance > 3:
+                return False
+
+            tourist.items.remove(item)
+            monkey.held_items.append(item)
+            if item.kind == "valuable":
+                tourist.stolen_valuables[item] = monkey.id
+
+            return True
+
+    def _valid_trade(self, monkey, tourist, valuable, food):
+        return (
+            self.monkeys.get(monkey.id) is monkey
+            and self.get_tourist(tourist.id) is tourist
+            and monkey.alive
+            and tourist.alive
+            and not tourist.inside_temple
+            and max(abs(monkey.x - tourist.x), abs(monkey.y - tourist.y)) <= 3
+            and valuable.kind == "valuable"
+            and tourist.stolen_valuables.get(valuable) == monkey.id
+            and valuable in monkey.held_items
+            and valuable not in tourist.items
+            and food in tourist.items
+            and food not in monkey.held_items
+            and food.kind == "food"
+            and food.hunger_restore is not None
+            and math.isfinite(food.hunger_restore)
+            and food.hunger_restore > 0
         )
-        if distance > 3:
-            return False
-        
-        tourist.items.remove(item)
-        monkey.held_items.append(item)
 
-        return True
+    def _expire_trade_offers(self):
+        for offer_id, offer in list(self.trade_offers.items()):
+            if self.total_tick >= offer.expires_at_tick:
+                del self.trade_offers[offer_id]
+
+    def create_trade_offer(self, tourist, monkey, valuable, food):
+        """Create one pending offer per participant, valid for 30 ticks."""
+        with self.lock:
+            self._expire_trade_offers()
+            if not self._valid_trade(monkey, tourist, valuable, food):
+                return None
+            if any(
+                offer.monkey_id == monkey.id or offer.tourist_id == tourist.id
+                for offer in self.trade_offers.values()
+            ):
+                return None
+            offer = TradeOffer(
+                self.next_trade_offer_id, tourist.id, monkey.id,
+                valuable, food, self.total_tick + 30,
+            )
+            self.next_trade_offer_id += 1
+            self.trade_offers[offer.id] = offer
+            return offer
+
+    def accept_trade_offer(self, monkey, offer_id):
+        """Validate and consume a pending offer before exchanging its items."""
+        with self.lock:
+            self._expire_trade_offers()
+            offer = self.trade_offers.get(offer_id)
+            if (
+                offer is None or offer.monkey_id != monkey.id
+                or self.monkeys.get(monkey.id) is not monkey
+            ):
+                return False
+            tourist = self.get_tourist(offer.tourist_id)
+            # A stale offer is closed even when no transfer can be made.
+            del self.trade_offers[offer_id]
+            if tourist is None or not self._valid_trade(
+                monkey, tourist, offer.valuable, offer.food
+            ):
+                return False
+            monkey.held_items.remove(offer.valuable)
+            tourist.items.remove(offer.food)
+            tourist.items.append(offer.valuable)
+            del tourist.stolen_valuables[offer.valuable]
+            monkey.eat(offer.food.hunger_restore)
+            return True
+
+    def reject_trade_offer(self, monkey, offer_id):
+        """Close an offer without moving items or feeding the monkey."""
+        with self.lock:
+            self._expire_trade_offers()
+            offer = self.trade_offers.get(offer_id)
+            if (
+                offer is None or offer.monkey_id != monkey.id
+                or self.monkeys.get(monkey.id) is not monkey
+            ):
+                return False
+            del self.trade_offers[offer_id]
+            return True
 
 
 
