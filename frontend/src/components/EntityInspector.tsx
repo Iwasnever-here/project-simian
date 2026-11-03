@@ -108,15 +108,15 @@ function EntityInspector({
             <div
               className={
                 monkey.alive
-                  ? 'status status--dead'
-                  : 'status status--alive'
+                  ? 'status status--alive'
+                  : 'status status--dead'
               }
             >
               <span />
 
               {monkey.alive
-                ? 'Dead'
-                : 'Alive'}
+                ? 'Alive'
+                : 'Dead'}
             </div>
           </div>
         </div>

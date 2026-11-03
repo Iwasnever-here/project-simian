@@ -1379,6 +1379,7 @@ class Monkey:
             "age": self.age,
             "life_stage": self.get_life_stage(),
             "health": round(self.health, 1),
+            "alive": self.alive,
             "name": self.name,
             "energy": round(self.energy, 1),
             "tourist_interaction_ticks": self.tourist_interaction_ticks,

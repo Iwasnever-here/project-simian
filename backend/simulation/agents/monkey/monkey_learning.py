@@ -1,5 +1,6 @@
 import torch
 import random
+import os
 import torch.nn.functional as F
 from backend.simulation.agents.experience import Experience
 from backend.simulation.agents.monkey.monkey_constants import (
@@ -25,6 +26,12 @@ from backend.simulation.agents.monkey.monkey_constants import (
     BASIC_SOCIAL_LEARNING_DAYS,
     TOURIST_LEARNING_DAYS,
 )
+# Explicit opt-in for mechanic testing; normal runs use epsilon-greedy selection.
+DEBUG_FAVOUR_STEALING = os.getenv("SIMIAN_DEBUG_FAVOUR_STEALING", "0").lower() in {
+    "1", "true", "yes",
+}
+
+
 def get_curriculum_actions(day):
     if day < SURVIVAL_LEARNING_DAYS:
         return {"wander", "seek_food", "seek_shelter"}
@@ -385,9 +392,6 @@ def choose_brain_action(
     if not brain_actions:
         return "wander"
 
-    # TEMPORARY: Prefer stealing during testing.
-    DEBUG_FAVOUR_STEALING = True
-
     if (
         DEBUG_FAVOUR_STEALING
         and "steal_item" in brain_actions
@@ -445,6 +449,13 @@ def finalize_brain_experience(monkey, world):
         reward=monkey.reward,
         next_state=next_state,
         done=not monkey.alive,
+        next_valid_actions=tuple(
+            encode_monkey_action(action)
+            for action in get_valid_actions(
+                monkey, world, visible_food, visible_monkeys, visible_tourists,
+            )
+            if action in BRAIN_CONTROLLED_ACTIONS
+        ) if monkey.alive else (),
     )
     monkey.brain_experiences.append(experience)
     if len(monkey.brain_experiences) > MAX_EXPERIENCES:
@@ -489,29 +500,21 @@ def train_brain(monkey):
         1,
         actions.unsqueeze(1),
     ).squeeze(1)
-    controlled_indexes = torch.tensor(
-        [
-            encode_monkey_action(action)
-            for action in BRAIN_CONTROLLED_ACTIONS
-        ],
-        dtype=torch.long,
-    )
     # Work out the training target.
     # No gradients are needed for this calculation.
     with torch.no_grad():
         next_q_values = monkey.brain(
             next_states
         )
-        controlled_next_q_values = (
-            next_q_values[
-                :,
-                controlled_indexes,
-            ]
-        )
-        best_next_q_values = (
-            controlled_next_q_values
-            .max(dim=1)
-            .values
+        next_action_mask = torch.zeros_like(next_q_values, dtype=torch.bool)
+        for row, experience in enumerate(batch):
+            next_action_mask[row, list(experience.next_valid_actions)] = True
+        best_next_q_values = next_q_values.masked_fill(
+            ~next_action_mask, float("-inf"),
+        ).max(dim=1).values
+        # Terminal states (and older experiences without a mask) do not bootstrap.
+        best_next_q_values = torch.where(
+            next_action_mask.any(dim=1), best_next_q_values, 0.0,
         )
         targets = rewards + (
             GAMMA

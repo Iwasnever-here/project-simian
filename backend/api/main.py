@@ -7,6 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.simulation.agents.monkey.monkey_learning import get_controlled_q_values
 from backend.simulation.world.world import World
+from backend.simulation.agents.monkey.monkey_constants import VISION_RANGE
 
 
 SIMULATION_TICK_SECONDS = 1.0
@@ -228,8 +229,7 @@ def get_simulation_status():
     }
 
 
-@app.get("/monkeys/{monkey_id}/brain-state")
-def get_monkey_brain_state(monkey_id: int):
+def _get_brain_inputs(monkey_id: int):
     monkey = world.get_monkey(monkey_id)
 
     if monkey is None:
@@ -238,43 +238,37 @@ def get_monkey_brain_state(monkey_id: int):
             detail="Monkey not found",
         )
 
-    return {
-        "monkey_id": monkey.id,
-        "brain_state": monkey._get_brain_state(world),
-    }
+    observations = (
+        world.get_visible_fruit_trees(monkey.x, monkey.y, VISION_RANGE),
+        world.get_visible_monkeys(monkey.id, monkey.x, monkey.y, VISION_RANGE),
+        world.get_visible_tourists(monkey.x, monkey.y, VISION_RANGE),
+    )
+    state = monkey._get_brain_state(world, *observations)
+    return monkey, state, observations
+
+
+@app.get("/monkeys/{monkey_id}/brain-state")
+def get_monkey_brain_state(monkey_id: int):
+    with world.lock:
+        monkey, state, _ = _get_brain_inputs(monkey_id)
+        return {"monkey_id": monkey.id, "brain_state": state}
 
 @app.get("/monkeys/{monkey_id}/brain-output")
 def get_monkey_brain_output(monkey_id: int):
-    monkey = world.get_monkey(monkey_id)
-
-    if monkey is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Monkey not found",
-        )
-
-    outputs = monkey._get_brain_output(world)
-
-    return {
-        "monkey_id": monkey.id,
-        "outputs": outputs.tolist(),
-    }
+    with world.lock:
+        monkey, state, _ = _get_brain_inputs(monkey_id)
+        outputs = monkey._get_brain_output(state)
+        return {"monkey_id": monkey.id, "outputs": outputs.tolist()}
 
 @app.get("/monkeys/{monkey_id}/brain-choice")
 def get_monkey_brain_choice(monkey_id: int):
-    monkey = world.get_monkey(monkey_id)
-
-    if monkey is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Monkey not found",
-        )
-
-    return {
-        "monkey_id": monkey.id,
-        "valid_actions": monkey._get_valid_actions(world),
-        "chosen_action": monkey._choose_brain_action(world),
-    }
+    with world.lock:
+        monkey, state, observations = _get_brain_inputs(monkey_id)
+        return {
+            "monkey_id": monkey.id,
+            "valid_actions": monkey._get_valid_actions(world, *observations),
+            "chosen_action": monkey._choose_brain_action(world, state, *observations),
+        }
 
 @app.get("/monkeys/{monkey_id}/brain-debug")
 def get_monkey_brain_debug(monkey_id: int):

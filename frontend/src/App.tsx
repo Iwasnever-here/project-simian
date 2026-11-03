@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import WorldCanvas from './WorldCanvas'
+import useSelectedEntity from './useSelectedEntity'
 import Minimap from './Minimap'
 
 import {
@@ -113,20 +114,20 @@ function App() {
     setSelectedMonkeyId,
   ] = useState<number | null>(null)
 
-  const [
-    selectedMonkey,
-    setSelectedMonkey,
-  ] = useState<Monkey | null>(null)
+  const selectedMonkey = useSelectedEntity<Monkey>(
+    selectedMonkeyId === null ? null : `${API_BASE}/monkeys/${selectedMonkeyId}`,
+    setSelectedMonkeyId,
+  )
 
   const [
     selectedTouristId,
     setSelectedTouristId,
   ] = useState<number | null>(null)
 
-  const [
-    selectedTourist,
-    setSelectedTourist,
-  ] = useState<Tourist | null>(null)
+  const selectedTourist = useSelectedEntity<Tourist>(
+    selectedTouristId === null ? null : `${API_BASE}/tourists/${selectedTouristId}`,
+    setSelectedTouristId,
+  )
 
   const [events, setEvents] =
     useState<SimulationEvent[]>([])
@@ -241,105 +242,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (selectedMonkeyId === null) {
-      setSelectedMonkey(null)
-      return
-    }
-
-    const fetchSelectedMonkey = () => {
-      fetch(
-        `${API_BASE}/monkeys/${selectedMonkeyId}`,
-      )
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(
-              `HTTP ${response.status}`,
-            )
-          }
-
-          return response.json()
-        })
-        .then((data: Monkey) => {
-          setSelectedMonkey(data)
-        })
-        .catch((error) => {
-          if (
-            error instanceof DOMException &&
-            error.name === 'AbortError'
-          ) {
-            return
-          }
-
-          console.error(
-            'Selected monkey fetch failed:',
-            error,
-          )
-        })
-    }
-
-    fetchSelectedMonkey()
-
-    const interval =
-      window.setInterval(
-        fetchSelectedMonkey,
-        1000,
-      )
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [selectedMonkeyId])
-
-  useEffect(() => {
-    if (selectedTouristId === null) {
-      setSelectedTourist(null)
-      return
-    }
-
-    const fetchSelectedTourist = () => {
-      fetch(
-        `${API_BASE}/tourists/${selectedTouristId}`,
-      )
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(
-              `HTTP ${response.status}`,
-            )
-          }
-
-          return response.json()
-        })
-        .then((data: Tourist) => {
-          setSelectedTourist(data)
-        })
-        .catch((error) => {
-          if (
-            error instanceof DOMException &&
-            error.name === 'AbortError'
-          ) {
-            return
-          }
-
-          console.error(
-            'Selected tourist fetch failed:',
-            error,
-          )
-        })
-    }
-
-    fetchSelectedTourist()
-
-    const interval =
-      window.setInterval(
-        fetchSelectedTourist,
-        1000,
-      )
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [selectedTouristId])
 
   useEffect(() => {
     const fetchEvents = () => {
