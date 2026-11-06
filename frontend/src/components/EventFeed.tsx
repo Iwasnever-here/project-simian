@@ -10,6 +10,8 @@ const labels: Record<string, string> = {
   social: 'Social',
   tourist: 'Tourist',
   tourist_arrival: 'Tourist',
+  tourist_theft: 'Theft',
+  tourist_trade_accepted: 'Trade accepted',
 }
 
 function EventFeed({

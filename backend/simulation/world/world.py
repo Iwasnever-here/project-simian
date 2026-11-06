@@ -1411,6 +1411,16 @@ class World:
             if item.kind == "valuable":
                 tourist.stolen_valuables[item] = monkey.id
 
+            self.add_event(
+                event_type="tourist_theft",
+                message=f"{monkey.name} stole {item.name} from {tourist.name}.",
+                data={
+                    "monkey_id": monkey.id,
+                    "tourist_id": tourist.id,
+                    "item_name": item.name,
+                    "item_value": item.value,
+                },
+            )
             return True
 
     def _valid_trade(self, monkey, tourist, valuable, food):
@@ -1523,6 +1533,22 @@ class World:
             tourist.items.append(offer.valuable)
             del tourist.stolen_valuables[offer.valuable]
             monkey.eat(offer.food.hunger_restore)
+            self.add_event(
+                event_type="tourist_trade_accepted",
+                message=(
+                    f"{monkey.name} accepted {tourist.name}'s offer: "
+                    f"returned {offer.valuable.name} for {offer.food.name}."
+                ),
+                data={
+                    "offer_id": offer.id,
+                    "monkey_id": monkey.id,
+                    "tourist_id": tourist.id,
+                    "item_name": offer.valuable.name,
+                    "item_value": offer.valuable.value,
+                    "food_name": offer.food.name,
+                    "food_value": offer.food.value,
+                },
+            )
             return True
 
     def reject_trade_offer(self, monkey, offer_id):

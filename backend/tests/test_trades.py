@@ -19,6 +19,9 @@ def trade():
     world.lock = threading.RLock()
     world.total_tick = 10
     world.tick = 10
+    world.day = 1
+    world.events = []
+    world.next_event_id = 1
     world.trade_offers = {}
     world.next_trade_offer_id = 1
     monkey = Monkey(id=1, x=0, y=0, gender="male", name="Thief", hunger=70)
@@ -53,9 +56,20 @@ def test_accept_returns_exact_valuable_and_consumes_food_once(trade):
     assert monkey.held_items == [identical]
     assert monkey.hunger == 40
     assert valuable not in tourist.stolen_valuables
+    assert [event["type"] for event in world.get_events()] == [
+        "tourist_theft", "tourist_trade_accepted",
+    ]
+    event = world.get_events()[-1]
+    assert event["message"] == "Thief accepted Visitor's offer: returned phone for banana."
+    assert event["data"]["offer_id"] == offer.id
+    assert event["data"]["item_name"] == valuable.name
+    assert event["data"]["food_name"] == food.name
+    assert event["day"] == world.day
+    assert event["tick"] == world.total_tick
     assert not world.accept_trade_offer(monkey, offer.id)
     assert not world.reject_trade_offer(monkey, offer.id)
     assert monkey.hunger == 40
+    assert len(world.get_events()) == 2
 
 
 def test_reject_keeps_inventories_and_hunger(trade):
@@ -67,6 +81,7 @@ def test_reject_keeps_inventories_and_hunger(trade):
     assert monkey.hunger == 70
     assert tourist.stolen_valuables[valuable] == monkey.id
     assert not world.accept_trade_offer(monkey, offer.id)
+    assert [event["type"] for event in world.get_events()] == ["tourist_theft"]
 
 
 @pytest.mark.parametrize("invalid", [
@@ -105,6 +120,7 @@ def test_invalid_acceptance_does_not_transfer(trade, invalid):
     assert not world.accept_trade_offer(monkey, offer.id)
     assert (monkey.held_items, tourist.items, monkey.hunger) == before
     assert offer.id not in world.trade_offers
+    assert [event["type"] for event in world.get_events()] == ["tourist_theft"]
 
 
 def test_forged_items_and_wrong_monkey_cannot_trade(trade):
@@ -151,3 +167,25 @@ def test_invalid_theft_does_not_record_owner(trade):
     assert not world.transfer_item_to_monkey(monkey, tourist, other)
     assert other in tourist.items
     assert other not in tourist.stolen_valuables
+    assert len(world.get_events()) == 1
+
+
+@pytest.mark.parametrize("kind", ["valuable", "food"])
+def test_successful_theft_emits_one_event_with_participants_and_item(trade, monkeypatch, kind):
+    world, monkey, tourist, valuable, food = trade
+    item = food if kind == "food" else replace(valuable)
+    tourist.items = [item]
+    monkeypatch.setattr("random.choice", lambda items: items[0])
+    before = len(world.get_events())
+    assert steal_item(monkey, world, tourist)
+    assert len(world.get_events()) == before + 1
+    event = world.get_events()[-1]
+    assert event["type"] == "tourist_theft"
+    assert event["message"] == f"Thief stole {item.name} from Visitor."
+    assert event["data"] == {
+        "monkey_id": monkey.id, "tourist_id": tourist.id,
+        "item_name": item.name, "item_value": item.value,
+    }
+    assert event["id"] == world.get_events()[-2]["id"] + 1
+    assert not steal_item(monkey, world, tourist)
+    assert len(world.get_events()) == before + 1

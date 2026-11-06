@@ -23,6 +23,8 @@ def scene():
     world.total_tick = 10
     world.tick = 10
     world.day = 45
+    world.events = []
+    world.next_event_id = 1
     world.trade_offers = {}
     world.next_trade_offer_id = 1
     monkey = Monkey(1, 0, 0, "male", "Thief", hunger=70, age=150)
