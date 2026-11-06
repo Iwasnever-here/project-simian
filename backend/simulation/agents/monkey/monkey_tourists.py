@@ -382,6 +382,24 @@ TOURIST_ACTION_HANDLERS = {
 }
 
 
+def execute_trade_action(monkey, world, offer_id, action, visible_tourists):
+    """Respond to the exact perceived offer, independently of tourist targeting."""
+    offer = world.get_trade_offer_for_monkey(monkey, visible_tourists)
+    if offer is None or offer.id != offer_id:
+        return False
+    if action == "accept_trade":
+        success = world.accept_trade_offer(monkey, offer_id)
+    elif action == "reject_trade":
+        success = world.reject_trade_offer(monkey, offer_id)
+    else:
+        return False
+    monkey.last_tourist_action = action
+    monkey.last_tourist_action_success = success
+    if success:
+        monkey.state = "trading" if action == "accept_trade" else "rejecting_trade"
+    return success
+
+
 def execute_tourist_action(monkey, world, tourist, action):
     """
     Execute an action selected by the main MonkeyBrain.

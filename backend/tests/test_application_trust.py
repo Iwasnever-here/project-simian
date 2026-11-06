@@ -24,6 +24,7 @@ def scene():
         get_visible_fruit_trees=lambda *args: [],
         get_visible_monkeys=lambda *args: [],
         get_visible_tourists=lambda *args: [],
+        get_trade_offer_for_monkey=lambda *args: None,
     )
     return monkey, world
 
@@ -46,7 +47,7 @@ def test_brain_endpoints(scene, monkeypatch, endpoint, key):
     payload = response.json()
     assert key in payload
     if endpoint == "brain-state":
-        assert len(payload[key]) == 19
+        assert len(payload[key]) == 21
     elif endpoint == "brain-output":
         assert len(payload[key]) == len(MONKEY_ACTIONS)
     elif endpoint == "brain-choice":
@@ -70,7 +71,7 @@ def test_monkey_api_reports_alive_status(scene, monkeypatch, alive):
 def test_experience_records_curriculum_filtered_next_actions(scene, alive):
     monkey, world = scene
     monkey.alive = alive
-    monkey.pending_brain_state = [0.0] * 19
+    monkey.pending_brain_state = [0.0] * 21
     monkey.pending_brain_action = 0
     # Social actions are visible but unavailable in day-zero curriculum.
     world.get_visible_monkeys = lambda *args: [

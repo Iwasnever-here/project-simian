@@ -88,6 +88,10 @@ def get_valid_actions(
 
     # Find the selected tourist among currently visible tourists.
     # Do not substitute another tourist for the selected target.
+    # Incoming offers do not require a selected tourist or an expired theft cooldown.
+    if world.get_trade_offer_for_monkey(monkey, visible_tourists) is not None:
+        valid_actions.extend(["accept_trade", "reject_trade"])
+
     selected_tourist = next(
         (
             tourist
@@ -288,6 +292,7 @@ def finalize_tourist_experience(monkey, world):
     monkey.pending_tourist_done = False
     
 def get_brain_state(monkey, world, visible_food, visible_monkeys, visible_tourists):
+    offer = world.get_trade_offer_for_monkey(monkey, visible_tourists)
     if visible_food:
         nearest_food = min(
             visible_food,
@@ -362,7 +367,9 @@ def get_brain_state(monkey, world, visible_food, visible_monkeys, visible_touris
         tourist_distance_normalized,
         tourist_has_items,
         1.0 if monkey.held_items else 0.0,
-        has_tourist_target,  # NEW FEATURE 19: change MonkeyBrain input_size to 19.
+        has_tourist_target,
+        float(offer is not None),
+        min(offer.food.hunger_restore / MAX_HUNGER, 1.0) if offer is not None else 0.0,
     ]
 
 def get_brain_output(monkey, state):

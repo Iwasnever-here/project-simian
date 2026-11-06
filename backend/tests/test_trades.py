@@ -18,6 +18,7 @@ def trade():
     world = World.__new__(World)
     world.lock = threading.RLock()
     world.total_tick = 10
+    world.tick = 10
     world.trade_offers = {}
     world.next_trade_offer_id = 1
     monkey = Monkey(id=1, x=0, y=0, gender="male", name="Thief", hunger=70)

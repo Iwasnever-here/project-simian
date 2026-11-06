@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import random
+import math
 
 from .touristItem import TouristItem
 
@@ -21,6 +22,7 @@ PATH_RETRY_COOLDOWN_TICKS = 20
 
 FLEE_SAFE_DISTANCE = 6
 TOURIST_MONKEY_VISION_RANGE = 5
+TRADE_RETRY_COOLDOWN_TICKS = 30
 
 
 @dataclass
@@ -53,6 +55,7 @@ class Tourist:
     items: list[TouristItem] = field(default_factory=list)
     # Exact stolen valuable -> thief ID; populated by world transfers.
     stolen_valuables: dict[TouristItem, int] = field(default_factory=dict)
+    trade_retry_after_tick: int = 0
 
     def to_dict(self):
         return {
@@ -94,6 +97,12 @@ class Tourist:
                 self.threat_monkey_id = threat.id
                 self.state = FLEEING_MONKEY
 
+        if self.inside_temple or self.state in (HEADING_TO_BOAT, FLEEING_MONKEY, INSIDE_TEMPLE):
+            world.cancel_trade_offers_for_tourist(self)
+        elif self.try_offer_trade(world):
+            # Keep the current route, but wait while the monkey considers the offer.
+            return
+
         if self.state == HEADING_TO_TEMPLE:
             self.head_to_temple(world)
 
@@ -108,6 +117,47 @@ class Tourist:
 
         elif self.state == FLEEING_MONKEY:
             self._flee_from_monkey(world)
+
+    # -----------------------------------------------------------------
+    # Bargaining
+    # -----------------------------------------------------------------
+
+    def try_offer_trade(self, world):
+        if world.get_trade_offer_for_tourist(self) is not None:
+            return True
+        if world.total_tick < self.trade_retry_after_tick:
+            return False
+        if not self.stolen_valuables:
+            return False
+
+        visible_monkeys = world.get_nearby_monkeys(
+            self.x, self.y, TOURIST_MONKEY_VISION_RANGE,
+        )
+        # Recover the most valuable eligible possession first.
+        valuables = sorted(
+            (item for item in self.stolen_valuables
+             if math.isfinite(item.value) and item.value > 0),
+            key=lambda item: item.value, reverse=True,
+        )
+        for valuable in valuables:
+            thief_id = self.stolen_valuables[valuable]
+            monkey = next((other for other in visible_monkeys if other.id == thief_id), None)
+            if monkey is None or valuable not in monkey.held_items:
+                continue
+            # One real food item, with a budget equal to the stolen item's value.
+            foods = [
+                item for item in self.items
+                if item.kind == "food"
+                and math.isfinite(item.value) and 0 < item.value <= valuable.value
+                and item.hunger_restore is not None
+                and math.isfinite(item.hunger_restore) and item.hunger_restore > 0
+            ]
+            if not foods:
+                continue
+            food = max(foods, key=lambda item: (item.value, item.hunger_restore))
+            if world.create_trade_offer(self, monkey, valuable, food) is not None:
+                return True
+        return False
 
     # -----------------------------------------------------------------
     # Pathfinding

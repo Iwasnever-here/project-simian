@@ -77,6 +77,7 @@ from backend.simulation.agents.monkey.monkey_tourists import (
     update_tourist_interaction_cooldown,
     grab_item_monkey,
     execute_tourist_action,
+    execute_trade_action,
     get_target_tourist,
 )
 from backend.simulation.agents.monkey.monkey_social import (
@@ -201,7 +202,7 @@ class Monkey:
     last_brain_action: str | None = None
 
     brain: MonkeyBrain = field(default_factory = lambda: MonkeyBrain(
-        input_size = 19,
+        input_size = 21,
         output_size = len(MONKEY_ACTIONS)
     ))
     
@@ -338,7 +339,7 @@ class Monkey:
                     and self.last_brain_action == "seek_food"
                     and self.target_x is not None
                     and self.target_y is not None
-                    and brain_action not in ("seek_food", "seek_shelter")
+                    and brain_action not in ("seek_food", "seek_shelter", "accept_trade")
                 ):
                     brain_action = "seek_food"
 
@@ -390,6 +391,14 @@ class Monkey:
                 # -------------------------------------------------
                 # Monkey social actions
                 # -------------------------------------------------
+
+                elif brain_action in ("accept_trade", "reject_trade"):
+                    tourist_action = brain_action
+                    offer = world.get_trade_offer_for_monkey(self, visible_tourists)
+                    tourist_success = execute_trade_action(
+                        self, world, offer.id if offer is not None else None,
+                        brain_action, visible_tourists,
+                    )
 
                 elif brain_action == "approach_monkey":
                     handled = self._approach_monkey(

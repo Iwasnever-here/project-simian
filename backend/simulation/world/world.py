@@ -806,6 +806,7 @@ class World:
         with self.lock:
             self.tick += 1
             self.total_tick += 1
+            self._expire_trade_offers()
 
             if self.tick >= TICKS_PER_DAY:
                 self.tick = 0
@@ -1418,7 +1419,11 @@ class World:
             and self.get_tourist(tourist.id) is tourist
             and monkey.alive
             and tourist.alive
+            and self.get_hour_of_day() < 17
             and not tourist.inside_temple
+            and tourist.state not in (
+                tourists.HEADING_TO_BOAT, tourists.FLEEING_MONKEY, tourists.INSIDE_TEMPLE,
+            )
             and max(abs(monkey.x - tourist.x), abs(monkey.y - tourist.y)) <= 3
             and valuable.kind == "valuable"
             and tourist.stolen_valuables.get(valuable) == monkey.id
@@ -1434,8 +1439,48 @@ class World:
 
     def _expire_trade_offers(self):
         for offer_id, offer in list(self.trade_offers.items()):
-            if self.total_tick >= offer.expires_at_tick:
-                del self.trade_offers[offer_id]
+            monkey = self.monkeys.get(offer.monkey_id)
+            tourist = self.get_tourist(offer.tourist_id)
+            if (
+                self.total_tick >= offer.expires_at_tick
+                or monkey is None or tourist is None
+                or not self._valid_trade(monkey, tourist, offer.valuable, offer.food)
+            ):
+                self._close_trade_offer(offer_id)
+
+    def _close_trade_offer(self, offer_id):
+        offer = self.trade_offers.pop(offer_id)
+        tourist = self.get_tourist(offer.tourist_id)
+        if tourist is not None:
+            tourist.trade_retry_after_tick = max(
+                tourist.trade_retry_after_tick,
+                self.total_tick + tourists.TRADE_RETRY_COOLDOWN_TICKS,
+            )
+
+    def cancel_trade_offers_for_tourist(self, tourist):
+        with self.lock:
+            for offer_id, offer in list(self.trade_offers.items()):
+                if offer.tourist_id == tourist.id:
+                    self._close_trade_offer(offer_id)
+
+    def get_trade_offer_for_tourist(self, tourist):
+        with self.lock:
+            self._expire_trade_offers()
+            return next((offer for offer in self.trade_offers.values()
+                         if offer.tourist_id == tourist.id), None)
+
+    def get_trade_offer_for_monkey(self, monkey, visible_tourists):
+        """Only expose this monkey's valid offer from a currently visible tourist."""
+        with self.lock:
+            self._expire_trade_offers()
+            if self.monkeys.get(monkey.id) is not monkey:
+                return None
+            return next((
+                offer for offer in self.trade_offers.values()
+                if offer.monkey_id == monkey.id
+                and any(self.get_tourist(offer.tourist_id) is tourist
+                        for tourist in visible_tourists)
+            ), None)
 
     def create_trade_offer(self, tourist, monkey, valuable, food):
         """Create one pending offer per participant, valid for 30 ticks."""
@@ -1468,7 +1513,7 @@ class World:
                 return False
             tourist = self.get_tourist(offer.tourist_id)
             # A stale offer is closed even when no transfer can be made.
-            del self.trade_offers[offer_id]
+            self._close_trade_offer(offer_id)
             if tourist is None or not self._valid_trade(
                 monkey, tourist, offer.valuable, offer.food
             ):
@@ -1490,7 +1535,7 @@ class World:
                 or self.monkeys.get(monkey.id) is not monkey
             ):
                 return False
-            del self.trade_offers[offer_id]
+            self._close_trade_offer(offer_id)
             return True
 
 

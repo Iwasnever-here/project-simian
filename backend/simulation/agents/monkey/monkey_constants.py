@@ -37,7 +37,9 @@ MONKEY_ACTIONS = [
     "follow_tourist",
     "scare_tourist",
     "leave_tourist",
-    "steal_item"  # NEW
+    "steal_item",
+    "accept_trade",
+    "reject_trade",
 ]
 
 
@@ -167,7 +169,9 @@ BRAIN_CONTROLLED_ACTIONS = [
     "follow_tourist",
     "scare_tourist",
     "leave_tourist",
-    "steal_item"  # NEW
+    "steal_item",
+    "accept_trade",
+    "reject_trade",
 ]
 
 TRAINING_INTERVAL_TICKS = 100
