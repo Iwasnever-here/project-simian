@@ -11,7 +11,11 @@ const labels: Record<string, string> = {
   tourist: 'Tourist',
   tourist_arrival: 'Tourist',
   tourist_theft: 'Theft',
+  tourist_trade_offered: 'Trade offered',
   tourist_trade_accepted: 'Trade accepted',
+  tourist_trade_rejected: 'Trade rejected',
+  tourist_trade_expired: 'Trade expired',
+  tourist_trade_cancelled: 'Trade cancelled',
 }
 
 function EventFeed({

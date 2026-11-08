@@ -24,6 +24,15 @@ type SimulationStatus = {
   deaths: number
 }
 
+export type PendingTradeOffer = {
+  id: number
+  monkey_name: string
+  tourist_name: string
+  item_name: string
+  food_name: string
+  ticks_remaining: number
+}
+
 export type Monkey = {
   id: number
   x: number
@@ -38,6 +47,7 @@ export type Monkey = {
   energy: number
   state: string
   target_monkey_id: number | null
+  pending_trade_offer?: PendingTradeOffer | null
 
   traits: {
     boldness: number
@@ -71,6 +81,7 @@ export type Tourist = {
   x: number
   y: number
   alive: boolean
+  pending_trade_offer?: PendingTradeOffer | null
 
   items: {
     name: string

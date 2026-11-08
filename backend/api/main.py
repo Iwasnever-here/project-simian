@@ -86,15 +86,17 @@ def tourists_endpoint():
 
 @app.get("/tourists/{tourist_id}")
 def get_tourist(tourist_id: int):
-    tourist = world.get_tourist(tourist_id)
-
-    if tourist is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Tourist not found",
-        )
-
-    return tourist.to_dict()
+    with world.lock:
+        tourist = world.get_tourist(tourist_id)
+        if tourist is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Tourist not found",
+            )
+        return {
+            **tourist.to_dict(),
+            "pending_trade_offer": world.get_trade_offer_summary(tourist_id=tourist_id),
+        }
 
 @app.get("/boat-landing")
 def boat_landing_endpoint():
@@ -159,15 +161,17 @@ def get_monkeys():
 
 @app.get("/monkeys/{monkey_id}")
 def get_monkey(monkey_id: int):
-    monkey = world.get_monkey(monkey_id)
-
-    if monkey is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Monkey not found",
-        )
-
-    return monkey.to_dict()
+    with world.lock:
+        monkey = world.get_monkey(monkey_id)
+        if monkey is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Monkey not found",
+            )
+        return {
+            **monkey.to_dict(),
+            "pending_trade_offer": world.get_trade_offer_summary(monkey_id=monkey_id),
+        }
 
 @app.post("/simulation/pause")
 def pause_simulation():

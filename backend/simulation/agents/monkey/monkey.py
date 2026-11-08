@@ -193,6 +193,7 @@ class Monkey:
 
     pending_brain_state: list[float] | None = None
     pending_brain_action: int | None = None
+    pending_brain_reward: float = 0.0
 
     brain_experiences: list[Experience] = field(
         default_factory=list
@@ -326,13 +327,18 @@ class Monkey:
 
                 start = time.perf_counter()
 
-                brain_action = self._choose_brain_action(
-                    world,
-                    brain_state,
-                    visible_food,
-                    visible_monkeys,
-                    visible_tourists,
+                valid_actions = self._get_valid_actions(
+                    world, visible_food, visible_monkeys, visible_tourists,
                 )
+                world.monkey_profile["brain_inference"] += time.perf_counter() - start
+
+                # The next decision sees updates made by other agents between turns.
+                start = time.perf_counter()
+                self._finalize_brain_experience(brain_state, valid_actions)
+                world.monkey_profile["experience"] += time.perf_counter() - start
+
+                start = time.perf_counter()
+                brain_action = choose_brain_action(self, brain_state, valid_actions)
                 # Survival safeguard: finish seeking food when dangerously hungry.
                 if (
                     self.hunger >= 70
@@ -602,17 +608,10 @@ class Monkey:
             time.perf_counter() - start
         )
 
-        # ---------------------------------------------------------
-        # Experience finalisation
-        # ---------------------------------------------------------
-
-        start = time.perf_counter()
-
-        self._finalize_brain_experience(world)
-
-        world.monkey_profile["experience"] += (
-            time.perf_counter() - start
-        )
+        if self.pending_brain_action is not None:
+            self.pending_brain_reward += self.reward
+        if not self.alive:
+            self._finalize_brain_experience()
 
         # ---------------------------------------------------------
         # Training
@@ -1365,11 +1364,8 @@ class Monkey:
         )
 
 
-    def _finalize_brain_experience(self, world):
-        return finalize_brain_experience(
-            self,
-            world,
-        )
+    def _finalize_brain_experience(self, next_state=None, valid_actions=()):
+        return finalize_brain_experience(self, next_state, valid_actions)
 
 
     def _train_brain(self):

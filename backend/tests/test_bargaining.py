@@ -1,9 +1,12 @@
+import importlib
 import threading
 from collections import defaultdict
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 import torch
+from fastapi.testclient import TestClient
 
 from backend.simulation.world.world import World
 from backend.simulation.agents.monkey.monkey import Monkey
@@ -101,6 +104,34 @@ def test_tourist_update_creates_one_offer_and_waits(scene):
     tourist.update(world, 12, world.tick)
     assert list(world.trade_offers) == [offer.id]
     assert tourist.x == 3
+
+
+def test_pending_offer_is_visible_in_both_inspectors(scene, monkeypatch):
+    world, monkey, tourist, valuable, food = scene
+    take_valuable(scene)
+    assert tourist.try_offer_trade(world)
+    offer = world.get_trade_offer_for_monkey(monkey, [tourist])
+    with patch("backend.simulation.world.world.World", return_value=world):
+        api = importlib.import_module("backend.api.main")
+    monkeypatch.setattr(api, "world", world)
+    client = TestClient(api.app)
+    routes = [f"/monkeys/{monkey.id}", f"/tourists/{tourist.id}"]
+    world.total_tick += 1
+    for route in routes:
+        response = client.get(route)
+        assert response.status_code == 200
+        assert response.json()["pending_trade_offer"] == {
+            "id": offer.id,
+            "monkey_name": monkey.name,
+            "tourist_name": tourist.name,
+            "item_name": valuable.name,
+            "food_name": food.name,
+            "ticks_remaining": 29,
+        }
+    world.total_tick = offer.expires_at_tick
+    for route in routes:
+        assert client.get(route).json()["pending_trade_offer"] is None
+    assert offer.id in world.trade_offers  # Inspection leaves lifecycle changes to the simulation.
 
 
 @pytest.mark.parametrize("outcome", ["reject", "expire"])
@@ -215,16 +246,26 @@ def test_world_ticks_wire_theft_offer_brain_response_and_training(scene, monkeyp
     before = monkey.hunger
     world.update()
     assert not world.trade_offers
-    experience = monkey.brain_experiences[-1]
-    assert experience.action == MONKEY_ACTIONS.index(action)
-    assert len(experience.state) == len(experience.next_state) == 21
+    preceding_experience = monkey.brain_experiences[-1]
+    assert preceding_experience.state[-2:] == [0.0, 0.0]
+    assert preceding_experience.next_state[-2:] == [1.0, 0.3]
+    assert MONKEY_ACTIONS.index(action) in preceding_experience.next_valid_actions
+    assert monkey.pending_brain_action == MONKEY_ACTIONS.index(action)
     if action == "accept_trade":
         assert valuable in tourist.items and valuable not in monkey.held_items
         assert food not in tourist.items
         assert monkey.hunger == pytest.approx(before + 0.25 - food.hunger_restore)
-        assert experience.reward > 0
+        assert monkey.pending_brain_reward > 0
     else:
         assert valuable in monkey.held_items and food in tourist.items
+
+    reward = monkey.pending_brain_reward
+    world.update()
+    experience = monkey.brain_experiences[-1]
+    assert experience.action == MONKEY_ACTIONS.index(action)
+    assert experience.reward == reward
+    assert experience.state == preceding_experience.next_state
+    assert len(experience.next_state) == 21
     # Exercise a real optimizer step with the expanded state and action dimensions.
     monkey.brain_experiences *= 32
     assert torch.isfinite(torch.tensor(learning.train_brain(monkey)))

@@ -850,6 +850,7 @@ class World:
 
             for monkey_id in dead_ids:
                 monkey = self.monkeys[monkey_id]
+                monkey._finalize_brain_experience()
 
                 cause = getattr(
                     monkey,
@@ -1451,14 +1452,15 @@ class World:
         for offer_id, offer in list(self.trade_offers.items()):
             monkey = self.monkeys.get(offer.monkey_id)
             tourist = self.get_tourist(offer.tourist_id)
-            if (
-                self.total_tick >= offer.expires_at_tick
-                or monkey is None or tourist is None
+            if self.total_tick >= offer.expires_at_tick:
+                self._close_trade_offer(offer_id, "expired")
+            elif (
+                monkey is None or tourist is None
                 or not self._valid_trade(monkey, tourist, offer.valuable, offer.food)
             ):
-                self._close_trade_offer(offer_id)
+                self._close_trade_offer(offer_id, "cancelled")
 
-    def _close_trade_offer(self, offer_id):
+    def _close_trade_offer(self, offer_id, outcome=None):
         offer = self.trade_offers.pop(offer_id)
         tourist = self.get_tourist(offer.tourist_id)
         if tourist is not None:
@@ -1467,11 +1469,57 @@ class World:
                 self.total_tick + tourists.TRADE_RETRY_COOLDOWN_TICKS,
             )
 
+        if outcome is not None:
+            self._log_trade_offer(
+                offer, outcome,
+                f"Offer #{offer.id} of {offer.food.name} for {offer.valuable.name} {outcome}.",
+            )
+
+    def _log_trade_offer(self, offer, outcome, message):
+        self.add_event(
+            event_type=f"tourist_trade_{outcome}",
+            message=message,
+            data={
+                "offer_id": offer.id,
+                "monkey_id": offer.monkey_id,
+                "tourist_id": offer.tourist_id,
+                "item_name": offer.valuable.name,
+                "item_value": offer.valuable.value,
+                "food_name": offer.food.name,
+                "food_value": offer.food.value,
+            },
+        )
+
     def cancel_trade_offers_for_tourist(self, tourist):
         with self.lock:
             for offer_id, offer in list(self.trade_offers.items()):
                 if offer.tourist_id == tourist.id:
-                    self._close_trade_offer(offer_id)
+                    self._close_trade_offer(offer_id, "cancelled")
+
+    def get_trade_offer_summary(self, *, monkey_id=None, tourist_id=None):
+        """Read the current offer for an inspected participant without changing it."""
+        with self.lock:
+            for offer in self.trade_offers.values():
+                if monkey_id is not None and offer.monkey_id != monkey_id:
+                    continue
+                if tourist_id is not None and offer.tourist_id != tourist_id:
+                    continue
+                ticks_remaining = offer.expires_at_tick - self.total_tick
+                monkey = self.monkeys.get(offer.monkey_id)
+                tourist = self.get_tourist(offer.tourist_id)
+                if (
+                    ticks_remaining > 0 and monkey is not None and tourist is not None
+                    and self._valid_trade(monkey, tourist, offer.valuable, offer.food)
+                ):
+                    return {
+                        "id": offer.id,
+                        "monkey_name": monkey.name,
+                        "tourist_name": tourist.name,
+                        "item_name": offer.valuable.name,
+                        "food_name": offer.food.name,
+                        "ticks_remaining": ticks_remaining,
+                    }
+            return None
 
     def get_trade_offer_for_tourist(self, tourist):
         with self.lock:
@@ -1509,6 +1557,10 @@ class World:
             )
             self.next_trade_offer_id += 1
             self.trade_offers[offer.id] = offer
+            self._log_trade_offer(
+                offer, "offered",
+                f"{tourist.name} offered {offer.food.name} to {monkey.name} for {offer.valuable.name}.",
+            )
             return offer
 
     def accept_trade_offer(self, monkey, offer_id):
@@ -1533,21 +1585,10 @@ class World:
             tourist.items.append(offer.valuable)
             del tourist.stolen_valuables[offer.valuable]
             monkey.eat(offer.food.hunger_restore)
-            self.add_event(
-                event_type="tourist_trade_accepted",
-                message=(
-                    f"{monkey.name} accepted {tourist.name}'s offer: "
-                    f"returned {offer.valuable.name} for {offer.food.name}."
-                ),
-                data={
-                    "offer_id": offer.id,
-                    "monkey_id": monkey.id,
-                    "tourist_id": tourist.id,
-                    "item_name": offer.valuable.name,
-                    "item_value": offer.valuable.value,
-                    "food_name": offer.food.name,
-                    "food_value": offer.food.value,
-                },
+            self._log_trade_offer(
+                offer, "accepted",
+                f"{monkey.name} accepted {tourist.name}'s offer: "
+                f"returned {offer.valuable.name} for {offer.food.name}.",
             )
             return True
 
@@ -1562,6 +1603,10 @@ class World:
             ):
                 return False
             self._close_trade_offer(offer_id)
+            self._log_trade_offer(
+                offer, "rejected",
+                f"{monkey.name} rejected the offer of {offer.food.name} for {offer.valuable.name}.",
+            )
             return True
 
 

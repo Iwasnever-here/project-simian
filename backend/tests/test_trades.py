@@ -57,7 +57,7 @@ def test_accept_returns_exact_valuable_and_consumes_food_once(trade):
     assert monkey.hunger == 40
     assert valuable not in tourist.stolen_valuables
     assert [event["type"] for event in world.get_events()] == [
-        "tourist_theft", "tourist_trade_accepted",
+        "tourist_theft", "tourist_trade_offered", "tourist_trade_accepted",
     ]
     event = world.get_events()[-1]
     assert event["message"] == "Thief accepted Visitor's offer: returned phone for banana."
@@ -69,7 +69,7 @@ def test_accept_returns_exact_valuable_and_consumes_food_once(trade):
     assert not world.accept_trade_offer(monkey, offer.id)
     assert not world.reject_trade_offer(monkey, offer.id)
     assert monkey.hunger == 40
-    assert len(world.get_events()) == 2
+    assert len(world.get_events()) == 3
 
 
 def test_reject_keeps_inventories_and_hunger(trade):
@@ -81,7 +81,9 @@ def test_reject_keeps_inventories_and_hunger(trade):
     assert monkey.hunger == 70
     assert tourist.stolen_valuables[valuable] == monkey.id
     assert not world.accept_trade_offer(monkey, offer.id)
-    assert [event["type"] for event in world.get_events()] == ["tourist_theft"]
+    assert [event["type"] for event in world.get_events()] == [
+        "tourist_theft", "tourist_trade_offered", "tourist_trade_rejected",
+    ]
 
 
 @pytest.mark.parametrize("invalid", [
@@ -120,7 +122,10 @@ def test_invalid_acceptance_does_not_transfer(trade, invalid):
     assert not world.accept_trade_offer(monkey, offer.id)
     assert (monkey.held_items, tourist.items, monkey.hunger) == before
     assert offer.id not in world.trade_offers
-    assert [event["type"] for event in world.get_events()] == ["tourist_theft"]
+    outcome = "expired" if invalid == "expired" else "cancelled"
+    assert [event["type"] for event in world.get_events()] == [
+        "tourist_theft", "tourist_trade_offered", f"tourist_trade_{outcome}",
+    ]
 
 
 def test_forged_items_and_wrong_monkey_cannot_trade(trade):

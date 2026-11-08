@@ -421,46 +421,23 @@ def choose_brain_action(
             best_score = score
             best_action = action
     return best_action
-def finalize_brain_experience(monkey, world):
+def finalize_brain_experience(monkey, next_state=None, valid_actions=()):
     if (
         monkey.pending_brain_state is None
         or monkey.pending_brain_action is None
+        or (next_state is None and monkey.alive)
     ):
         return
-    visible_food = world.get_visible_fruit_trees(
-        monkey.x,
-        monkey.y,
-        VISION_RANGE,
-    )
-    visible_monkeys = world.get_visible_monkeys(
-        monkey.id,
-        monkey.x,
-        monkey.y,
-        VISION_RANGE,
-    )
-    visible_tourists = world.get_visible_tourists(
-        monkey.x,
-        monkey.y,
-        VISION_RANGE,
-    )
-    next_state = get_brain_state(
-        monkey,
-        world,
-        visible_food,
-        visible_monkeys,
-        visible_tourists,
-    )
+
     experience = Experience(
         state=monkey.pending_brain_state,
         action=monkey.pending_brain_action,
-        reward=monkey.reward,
-        next_state=next_state,
+        reward=monkey.pending_brain_reward,
+        next_state=next_state if next_state is not None else monkey.pending_brain_state,
         done=not monkey.alive,
         next_valid_actions=tuple(
             encode_monkey_action(action)
-            for action in get_valid_actions(
-                monkey, world, visible_food, visible_monkeys, visible_tourists,
-            )
+            for action in valid_actions
             if action in BRAIN_CONTROLLED_ACTIONS
         ) if monkey.alive else (),
     )
@@ -469,6 +446,9 @@ def finalize_brain_experience(monkey, world):
         monkey.brain_experiences.pop(0)
     monkey.pending_brain_state = None
     monkey.pending_brain_action = None
+    monkey.pending_brain_reward = 0.0
+
+
 def train_brain(monkey):
     if (
         len(monkey.brain_experiences)

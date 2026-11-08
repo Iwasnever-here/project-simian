@@ -25,6 +25,7 @@ def scene():
         get_visible_monkeys=lambda *args: [],
         get_visible_tourists=lambda *args: [],
         get_trade_offer_for_monkey=lambda *args: None,
+        get_trade_offer_summary=lambda **kwargs: None,
     )
     return monkey, world
 
@@ -77,8 +78,16 @@ def test_experience_records_curriculum_filtered_next_actions(scene, alive):
     world.get_visible_monkeys = lambda *args: [
         SimpleNamespace(id=2, x=1, y=0),
     ]
-    learning.finalize_brain_experience(monkey, world)
+    observations = ([], world.get_visible_monkeys(), [])
+    next_state = learning.get_brain_state(monkey, world, *observations)
+    actions = learning.get_valid_actions(monkey, world, *observations)
+    monkey.pending_brain_reward = 3.0
+    if alive:
+        learning.finalize_brain_experience(monkey, next_state, actions)
+    else:
+        learning.finalize_brain_experience(monkey)
     experience = monkey.brain_experiences[-1]
+    assert experience.reward == 3.0
     assert experience.done is (not alive)
     assert experience.next_valid_actions == ((0,) if alive else ())
 

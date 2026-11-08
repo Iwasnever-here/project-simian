@@ -1,4 +1,4 @@
-import type { Monkey, Tourist } from '../App'
+import type { Monkey, PendingTradeOffer, Tourist } from '../App'
 
 type Props = {
   monkey: Monkey | null
@@ -60,6 +60,23 @@ function formatState(state: string) {
   return state
     .replace(/_/g, ' ')
     .toLowerCase()
+}
+
+function TradeOfferDetails({ offer }: { offer?: PendingTradeOffer | null }) {
+  if (!offer) return null
+
+  return (
+    <section className="panel-section">
+      <div className="panel-section__title">Pending trade offer</div>
+      <p className="panel-copy">
+        {offer.tourist_name} offers {offer.food_name} to {offer.monkey_name} for {offer.item_name}.
+      </p>
+      <div className="detail-row">
+        <span>Time remaining</span>
+        <strong>{offer.ticks_remaining} ticks</strong>
+      </div>
+    </section>
+  )
 }
 
 function EntityInspector({
@@ -180,6 +197,8 @@ function EntityInspector({
           </div>
         </section>
 
+        <TradeOfferDetails offer={monkey.pending_trade_offer} />
+
         <section className="panel-section">
           <div className="panel-section__title">
             Traits
@@ -293,6 +312,8 @@ function EntityInspector({
             </strong>
           </div>
         </section>
+
+        <TradeOfferDetails offer={tourist.pending_trade_offer} />
 
         <section className="panel-section">
           <div className="panel-section__title">
