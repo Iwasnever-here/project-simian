@@ -64,9 +64,9 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 - [ ] Improve minimap viewport indicator
 
-- [ ] Prevent mouse wheel from scrolling page while zooming world
+- [x] Prevent mouse wheel from scrolling page while zooming world
 
-- [ ] Fix entity popup error
+- [x] Fix entity popup error
 
 ### Future
 
@@ -90,11 +90,11 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 ### Needs Work
 
-- [ ] Balance fruit respawn speed
+- [x] Balance fruit respawn speed
 
-- [ ] Increase meaningful resource scarcity
+- [x] Increase meaningful resource scarcity
 
-- [ ] Improve environmental distribution of resources
+- [x] Improve environmental distribution of resources
 
 **---**
 
@@ -154,9 +154,9 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 ### Needs Work
 
-- [ ] Fix/verify life stage display in frontend
+- [x] Fix/verify life stage display in frontend
 
-- [ ] Expand differences in capability between life stages
+- [x] Expand differences in capability between life stages
 
 **---**
 
@@ -178,7 +178,7 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 ### Needs Work
 
-- [ ] Fix/verify alive/dead state displayed by frontend
+- [x] Fix/verify alive/dead state displayed by frontend
 
 - [ ] Add more causes of death as simulation expands
 
@@ -200,9 +200,9 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 ### Future
 
-- [ ] Further balance energy costs
+- [x] Further balance energy costs
 
-- [ ] Different movement types/costs
+- [x] Different movement types/costs
 
 - [ ] Connect energy decisions to danger and competition
 
@@ -270,7 +270,7 @@ VISION_RANGE = 5
 
 - [ ] Make memory quality more strongly affected by the memory trait
 
-- [ ] Forget old/unreliable food locations
+- [x] Forget old/unreliable food locations
 
 - [ ] Handle depleted remembered resources more intelligently
 
@@ -474,11 +474,11 @@ REPRODUCTION_COOLDOWN_TICKS = 100
 
 ### Needs Work
 
-- [ ] Continue balancing reproduction frequency
+- [x] Continue balancing reproduction frequency
 
-- [ ] Verify long-term population stability
+- [x] Verify long-term population stability
 
-- [ ] Fix population statistics when children are born
+- [x] Fix population statistics when children are born
 
 **---**
 
@@ -536,17 +536,17 @@ random.gauss(0, 0.05)
 
 ### Next
 
-- [ ] Stronger caretaker behaviour
+- [x] Stronger caretaker behaviour
 
-- [ ] Orphan survival penalties
+- [x] Orphan survival penalties
 
-- [ ] Under-50-day monkeys become significantly more vulnerable if mother dies
+- [x] Under-50-day monkeys become significantly more vulnerable if mother dies
 
 - [ ] Protection behaviour
 
-- [ ] Possible food assistance
+- [x] Possible food assistance
 
-- [ ] Gradual independence with age
+- [x] Gradual independence with age
 
 **---**
 
@@ -684,11 +684,11 @@ Current temple capacity:
 
 ### Still Needed / Verification
 
-- [ ] Verify `world.transfer_item_to_monkey()` correctly changes both inventories
+- [x] Verify `world.transfer_item_to_monkey()` correctly changes both inventories
 
-- [ ] Implement eating stolen food using `hunger_restore`
+- [x] Implement eating stolen food using `hunger_restore`
 
-- [ ] Add a brain-controlled `steal_item` action and distance/item availability mask
+- [x] Add a brain-controlled `steal_item` action and distance/item availability mask
 
 - [ ] Dedicated frontend item component
 
@@ -745,13 +745,13 @@ Already present: `grab_tourist_item()` calls `grab_item_monkey()`, which delegat
 
 Planned:
 
-- [ ] Monkey can choose `steal_item` when its selected tourist is within range and has possessions
+- [x] Monkey can choose `steal_item` when its selected tourist is within range and has possessions
 
-- [ ] Confirm item transfers to monkey and disappears from tourist inventory
+- [x] Confirm item transfers to monkey and disappears from tourist inventory
 
-- [ ] Consume stolen food and restore hunger
+- [x] Consume stolen food and restore hunger
 
-- [ ] Monkey can attempt to steal visible item
+- [x] Monkey can attempt to steal visible item
 
 - [ ] Item difficulty affects success
 
@@ -759,7 +759,7 @@ Planned:
 
 - [ ] Tourist traits affect difficulty
 
-- [ ] Successful theft
+- [x] Successful theft
 
 - [ ] Failed theft
 
@@ -779,13 +779,13 @@ The monkey should not initially know which objects are worth stealing.
 
 Planned:
 
-- [ ] Tourist wants stolen item returned
+- [x] Tourist wants stolen item returned
 
-- [ ] Tourist offers food/resource
+- [x] Tourist offers food/resource
 
 - [ ] Different items have different return values
 
-- [ ] Monkey experiences reward
+- [x] Monkey experiences reward
 
 - [ ] Monkey can associate item with previous reward
 
@@ -941,15 +941,15 @@ Planned:
 
 - [x] Total deaths
 
-- [ ] Population over time
+- [x] Population over time
 
-- [ ] Age distribution
+- [x] Age distribution
 
-- [ ] Average trait values
+- [x] Average trait values
 
-- [ ] Trait distributions
+- [x] Trait distributions
 
-- [ ] Food availability
+- [x] Food availability
 
 - [ ] Tourist count
 
@@ -979,11 +979,11 @@ Implemented/partially implemented:
 
 Needs work:
 
-- [ ] Fix popup error
+- [x] Fix popup error
 
-- [ ] Verify stage display
+- [x] Verify stage display
 
-- [ ] Verify alive/dead display
+- [x] Verify alive/dead display
 
 - [ ] Display social memory
 
@@ -1027,11 +1027,11 @@ SIMULATION_TICK_SECONDS = 1.0
 
 ### Frontend / Integration
 
-- [ ] Fix pause controls
+- [x] Fix pause controls
 
-- [ ] Fix speed controls
+- [x] Fix speed controls
 
-- [ ] Ensure UI remains synchronised with backend
+- [x] Ensure UI remains synchronised with backend
 
 **---**
 
@@ -1051,7 +1051,7 @@ SIMULATION_TICK_SECONDS = 1.0
 
 - [ ] Tourist arrival events
 
-- [ ] Theft events
+- [x] Theft events
 
 - [ ] Injury events
 
@@ -1120,8 +1120,8 @@ One remaining performance target is the observation system, especially the repea
 - [x] Establish profiler before major architectural rewrites
 - [x] Remove redundant pre-action observation scans
 - [ ] Profile fruit, monkey and tourist observation separately
-- [ ] Reduce expensive tree/resource scans
-- [ ] Improve spatial lookup as population/world complexity grows
+- [x] Reduce expensive tree/resource scans
+- [x] Improve spatial lookup as population/world complexity grows
 - [ ] Reuse or cache pathfinding where safe
 - [ ] Separate fast simulation stepping from frontend snapshot frequency
 - [ ] Add a headless / fast-run mode for long experiments
@@ -1179,23 +1179,23 @@ docker compose up --build
 
 ## High Priority
 
-- [ ] Fix entity popup error
+- [x] Fix entity popup error
 
 - [x] Fix population count when monkeys are born
 
-- [ ] Verify/fix monkey life stage display
+- [x] Verify/fix monkey life stage display
 
-- [ ] Verify/fix alive/dead display
+- [x] Verify/fix alive/dead display
 
-- [ ] Fix minimap rendering
+- [x] Fix minimap rendering
 
-- [ ] Fix pause/speed controls
+- [x] Fix pause/speed controls
 
-- [ ] Balance fruit respawn
+- [x] Balance fruit respawn
 
 ## Lower Priority
 
-- [ ] Prevent page scrolling while zooming map
+- [x] Prevent page scrolling while zooming map
 
 - [ ] Improve tourist click UI
 
