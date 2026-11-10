@@ -79,7 +79,7 @@ TOURIST_ITEM_TYPES = [
 
 
 def generate_tourist_items() -> list[TouristItem]:
-    item_count = random.randint(1, 3)
+    item_count = random.randint(3, 5)
 
     # Catalogue entries are templates, not shared inventory objects.
     return [replace(item) for item in random.sample(TOURIST_ITEM_TYPES, item_count)]
