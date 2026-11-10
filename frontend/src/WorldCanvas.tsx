@@ -98,9 +98,6 @@ type SelectionTarget = {
 
 const TILE_SIZE = 8
 
-const VIEWPORT_WIDTH = 900
-const VIEWPORT_HEIGHT = 600
-
 const LOAD_MARGIN_CHUNKS = 1
 // Chunks further than this (beyond the load margin) are freed.
 const EVICT_EXTRA_CHUNKS = 2
@@ -307,24 +304,27 @@ function drawMonkeys(graphics: Graphics, monkeys: MonkeyData[]) {
 
   for (const monkey of monkeys) {
     const scale = getMonkeyScale(monkey.life_stage)
+    const x = (monkey.x + 1) * TILE_SIZE
+    const y = (monkey.y + 1) * TILE_SIZE
 
-    const centerX = monkey.x * TILE_SIZE + TILE_SIZE
-    const baseY = monkey.y * TILE_SIZE + TILE_SIZE * 2
-
-    const bodyRadius = TILE_SIZE * 0.7 * scale
-    const headRadius = TILE_SIZE * 0.5 * scale
-    const earRadius = TILE_SIZE * 0.2 * scale
-
-    const bodyCenterY = baseY - bodyRadius
-    const headCenterY = bodyCenterY - bodyRadius - headRadius * 0.5
-
-    graphics.circle(centerX, bodyCenterY, bodyRadius).fill(0x6b4423)
-
+    graphics.ellipse(x, y + 7 * scale, 6 * scale, 1.5 * scale)
+      .fill({ color: 0x251911, alpha: 0.4 })
     graphics
-      .circle(centerX, headCenterY, headRadius)
-      .circle(centerX - headRadius, headCenterY, earRadius)
-      .circle(centerX + headRadius, headCenterY, earRadius)
-      .fill(0x7a5230)
+      .moveTo(x + 3 * scale, y + 4 * scale)
+      .quadraticCurveTo(x + 12 * scale, y + 5 * scale, x + 9 * scale, y - 3 * scale)
+      .stroke({ color: 0x603620, width: 1.8 * scale, cap: 'round' })
+    graphics
+      .ellipse(x, y + 3 * scale, 4.2 * scale, 4.5 * scale)
+      .circle(x - 4.3 * scale, y - 3 * scale, 1.8 * scale)
+      .circle(x + 4.3 * scale, y - 3 * scale, 1.8 * scale)
+      .circle(x, y - 3.5 * scale, 4.5 * scale)
+      .fill(0x603620)
+    graphics.ellipse(x, y - 2.6 * scale, 3.3 * scale, 2.9 * scale).fill(0xe8b27b)
+    graphics
+      .circle(x - 1.3 * scale, y - 3.4 * scale, 0.55 * scale)
+      .circle(x + 1.3 * scale, y - 3.4 * scale, 0.55 * scale)
+      .ellipse(x, y - 1.3 * scale, 0.8 * scale, 0.45 * scale)
+      .fill(0x291b14)
   }
 }
 
@@ -336,19 +336,22 @@ function drawTourists(graphics: Graphics, tourists: TouristData[]) {
       continue
     }
 
-    const centerX = tourist.x * TILE_SIZE + TILE_SIZE
-    const baseY = tourist.y * TILE_SIZE + TILE_SIZE * 2
+    const x = (tourist.x + 1) * TILE_SIZE
+    const y = (tourist.y + 1) * TILE_SIZE
+    const shirt = tourist.state === 'fleeing_monkey' ? 0xe07661 : 0x397d91
 
-    const bodyRadius = TILE_SIZE * 0.6
-    const headRadius = TILE_SIZE * 0.4
-
-    const bodyCenterY = baseY - bodyRadius
-    const headCenterY = bodyCenterY - bodyRadius - headRadius * 0.5
-
-    const shirtColor = tourist.state === 'inside_temple' ? 0xd4af37 : 0xdd4444
-
-    graphics.circle(centerX, bodyCenterY, bodyRadius).fill(shirtColor)
-    graphics.circle(centerX, headCenterY, headRadius).fill(0xf0c8a0)
+    graphics.ellipse(x, y + 7, 6, 1.5).fill({ color: 0x172126, alpha: 0.45 })
+    graphics
+      .roundRect(x - 3.5, y + 2, 3, 5.5, 1)
+      .roundRect(x + 0.5, y + 2, 3, 5.5, 1)
+      .fill(0x26353d)
+    graphics.roundRect(x - 4.5, y - 2.5, 9, 7, 2).fill(shirt)
+    graphics.roundRect(x + 2, y - 1.5, 3.5, 5.5, 1).fill(0xbc7343)
+    graphics.circle(x, y - 4.7, 3.1).fill(0xf0c8a0)
+    graphics
+      .roundRect(x - 2.7, y - 8.4, 5.4, 2.8, 1)
+      .roundRect(x - 4.4, y - 6.7, 8.8, 1.8, 0.8)
+      .fill(0xf1d9a0)
   }
 }
 
@@ -376,21 +379,6 @@ function drawSelectionBox(
     .moveTo(left, bottom - c).lineTo(left, bottom).lineTo(left + c, bottom)
     .moveTo(right - c, bottom).lineTo(right, bottom).lineTo(right, bottom - c)
     .stroke({ width: 2, color: 0xffffff })
-}
-
-// Stable draw callbacks for things that never change
-function drawNightOverlay(graphics: Graphics) {
-  graphics.clear()
-  graphics
-    .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-    .fill({ color: 0x08111f, alpha: 1 })
-}
-
-function drawHitArea(graphics: Graphics) {
-  graphics.clear()
-  graphics
-    .rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-    .fill({ color: 0x000000, alpha: 0 })
 }
 
 /* -------------------------------------------------------------------------- */
@@ -493,15 +481,15 @@ function useFetchOnce<T>(url: string, onData: (data: T) => void) {
 /* Memoised scene pieces                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** Caps the Pixi ticker. Must be rendered inside <Application>. */
-function FrameLimiter({ fps }: { fps: number }) {
+function CanvasSettings({ width, height }: { width: number; height: number }) {
   const { app, isInitialised } = useApplication()
 
   useEffect(() => {
-    if (isInitialised && app.ticker) {
-      app.ticker.maxFPS = fps
+    if (isInitialised) {
+      app.renderer.resize(width, height)
+      app.ticker.maxFPS = MAX_FPS
     }
-  }, [app, isInitialised, fps])
+  }, [app, isInitialised, width, height])
 
   return null
 }
@@ -573,8 +561,9 @@ function WorldCanvas({
   const chunkPixelSize = chunkSize * TILE_SIZE
 
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
-  const containerRef = useRef<any>(null)
+  const containerRef = useRef<Container | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const measuredSize = useRef<{ width: number; height: number } | null>(null)
   const zoomLabelRef = useRef<HTMLDivElement | null>(null)
   const lastPointerRef = useRef({ x: 0, y: 0 })
   const pointerDownRef = useRef({ x: 0, y: 0 })
@@ -589,6 +578,9 @@ function WorldCanvas({
   onViewportChangeRef.current = onViewportChange
 
   const [dragging, setDragging] = useState(false)
+  const [{ width: viewportWidth, height: viewportHeight }, setViewportSize] = useState({
+    width: 1, height: 1,
+  })
   const [monkeys, setMonkeys] = useState<MonkeyData[]>([])
   const [temple, setTemple] = useState<TempleData | null>(null)
   const [tourists, setTourists] = useState<TouristData[]>([])
@@ -603,6 +595,29 @@ function WorldCanvas({
 
   const maxCx = Math.ceil(width / chunkSize) - 1
   const maxCy = Math.ceil(height / chunkSize) - 1
+
+  useEffect(() => {
+    const element = wrapperRef.current
+    if (!element) return
+
+    const measure = () => {
+      const next = { width: element.clientWidth, height: element.clientHeight }
+      const previous = measuredSize.current
+      if (!next.width || !next.height ||
+          (previous?.width === next.width && previous.height === next.height)) return
+
+      const camera = cameraRef.current
+      camera.x += (next.width - (previous?.width ?? width * TILE_SIZE * camera.zoom)) / 2
+      camera.y += (next.height - (previous?.height ?? height * TILE_SIZE * camera.zoom)) / 2
+      containerRef.current?.position.set(camera.x, camera.y)
+      measuredSize.current = next
+      setViewportSize(next)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    measure()
+    return () => observer.disconnect()
+  }, [width, height])
 
   /* ------------------------------ data loading ----------------------------- */
 
@@ -680,13 +695,14 @@ function WorldCanvas({
   )
 
   const updateVisibleChunks = useCallback(() => {
+    if (viewportWidth <= 1 || viewportHeight <= 1) return
     const { x: cameraX, y: cameraY, zoom: cameraZoom } = cameraRef.current
 
     // Convert the visible screen area back into world pixel coordinates.
     const worldLeft = -cameraX / cameraZoom
     const worldTop = -cameraY / cameraZoom
-    const worldRight = (VIEWPORT_WIDTH - cameraX) / cameraZoom
-    const worldBottom = (VIEWPORT_HEIGHT - cameraY) / cameraZoom
+    const worldRight = (viewportWidth - cameraX) / cameraZoom
+    const worldBottom = (viewportHeight - cameraY) / cameraZoom
 
     const startCx = Math.max(
       0,
@@ -743,12 +759,16 @@ function WorldCanvas({
     onViewportChangeRef.current?.({
       x: worldLeft / TILE_SIZE,
       y: worldTop / TILE_SIZE,
-      width: VIEWPORT_WIDTH / (TILE_SIZE * cameraZoom),
-      height: VIEWPORT_HEIGHT / (TILE_SIZE * cameraZoom),
+      width: viewportWidth / (TILE_SIZE * cameraZoom),
+      height: viewportHeight / (TILE_SIZE * cameraZoom),
     })
-  }, [chunkPixelSize, maxCx, maxCy, loadChunk, forceRender])
+  }, [chunkPixelSize, maxCx, maxCy, loadChunk, forceRender, viewportWidth, viewportHeight])
 
   useEffect(() => {
+    if (throttleRef.current !== null) {
+      window.clearTimeout(throttleRef.current)
+      throttleRef.current = null
+    }
     updateVisibleChunks()
   }, [updateVisibleChunks])
 
@@ -914,6 +934,10 @@ function WorldCanvas({
 
   /* ------------------------------ derived draws ---------------------------- */
 
+  const drawHitArea = useCallback((graphics: Graphics) => {
+    graphics.clear().rect(0, 0, viewportWidth, viewportHeight).fill({ color: 0, alpha: 0 })
+  }, [viewportWidth, viewportHeight])
+
   const drawMonkeyLayer = useCallback(
     (graphics: Graphics) => drawMonkeys(graphics, monkeys),
     [monkeys],
@@ -974,23 +998,24 @@ function WorldCanvas({
   const loadedChunks = Array.from(chunksRef.current.values())
 
   return (
-    <div>
+    <div className="world-map">
       <div
         ref={wrapperRef}
-        style={{
-          position: 'relative',
-          width: VIEWPORT_WIDTH,
-          height: VIEWPORT_HEIGHT,
-        }}
+        className="world-map__viewport"
       >
         <Application
-          width={VIEWPORT_WIDTH}
-          height={VIEWPORT_HEIGHT}
+          width={viewportWidth}
+          height={viewportHeight}
           backgroundColor={0x6495ed}
         >
-          <FrameLimiter fps={MAX_FPS} />
+          <CanvasSettings width={viewportWidth} height={viewportHeight} />
 
-          <pixiContainer ref={containerRef}>
+          <pixiContainer
+            ref={containerRef}
+            x={cameraRef.current.x}
+            y={cameraRef.current.y}
+            scale={cameraRef.current.zoom}
+          >
             {loadedChunks.map((chunk) => (
               <ChunkView
                 key={chunkKey(chunk.cx, chunk.cy)}
@@ -1008,9 +1033,11 @@ function WorldCanvas({
             <pixiGraphics draw={drawSelectionLayer} />
           </pixiContainer>
 
-          {/* Drawn once; the day/night cycle only changes alpha. */}
-          <pixiGraphics
-            draw={drawNightOverlay}
+          <pixiSprite
+            texture={Texture.WHITE}
+            tint={0x08111f}
+            width={viewportWidth}
+            height={viewportHeight}
             alpha={nightAlpha}
             visible={nightAlpha > 0}
           />
@@ -1067,11 +1094,12 @@ function WorldCanvas({
               setDragging(false)
               updateVisibleChunks()
             }}
+            onPointerCancel={() => setDragging(false)}
           />
         </Application>
       </div>
 
-      <div ref={zoomLabelRef} style={{ marginTop: 8, fontSize: 14 }}>
+      <div ref={zoomLabelRef} className="world-map__zoom">
         Zoom: 100%
       </div>
     </div>

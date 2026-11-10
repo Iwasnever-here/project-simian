@@ -223,14 +223,18 @@ def set_simulation_speed(speed: float):
 
 @app.get("/simulation/status")
 def get_simulation_status():
-    alive = len(world.monkeys)
-    return {
-        "paused": simulation_paused,
-        "speed": simulation_speed,
-        "alive": alive,
-        "total": world.total_monkeys_created,
-        "deaths": world.total_monkeys_created - alive,
-    }
+    with world.lock:
+        current = world.population_sample()
+        history = world.population_history
+        if history[-1]["tick"] == current["tick"]:
+            history = history[:-1]
+
+        return {
+            "paused": simulation_paused,
+            "speed": simulation_speed,
+            **current,
+            "population_history": [*history, current],
+        }
 
 
 def _get_brain_inputs(monkey_id: int):

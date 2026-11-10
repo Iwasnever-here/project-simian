@@ -1,4 +1,4 @@
-import type { Monkey, PendingTradeOffer, Tourist } from '../App'
+import type { InventoryItem, Monkey, PendingTradeOffer, Tourist } from '../App'
 
 type Props = {
   monkey: Monkey | null
@@ -79,6 +79,25 @@ function TradeOfferDetails({ offer }: { offer?: PendingTradeOffer | null }) {
   )
 }
 
+function Inventory({ items = [], title }: { items?: InventoryItem[]; title: string }) {
+  return (
+    <section className="panel-section">
+      <div className="panel-section__title">{title}</div>
+      {items.length ? (
+        <div className="item-list">
+          {items.map((item, index) => (
+            <div className="item-row" key={`${item.name}-${index}`}>
+              <span className="item-thumbnail" aria-hidden="true" />
+              <span className="item-row__name">{item.name}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      ) : <p className="panel-copy">No items.</p>}
+    </section>
+  )
+}
+
 function EntityInspector({
   monkey,
   tourist,
@@ -109,9 +128,7 @@ function EntityInspector({
         </div>
 
         <div className="entity-summary">
-          <div className="entity-avatar">
-            🐒
-          </div>
+          <div className="entity-avatar" aria-hidden="true" />
 
           <div>
             <div className="entity-meta">
@@ -198,6 +215,7 @@ function EntityInspector({
         </section>
 
         <TradeOfferDetails offer={monkey.pending_trade_offer} />
+        <Inventory items={monkey.held_items} title="Held items" />
 
         <section className="panel-section">
           <div className="panel-section__title">
@@ -262,9 +280,7 @@ function EntityInspector({
         </div>
 
         <div className="entity-summary">
-          <div className="entity-avatar">
-            🧍
-          </div>
+          <div className="entity-avatar" aria-hidden="true" />
 
           <div>
             <div className="entity-meta">
@@ -315,36 +331,7 @@ function EntityInspector({
 
         <TradeOfferDetails offer={tourist.pending_trade_offer} />
 
-        <section className="panel-section">
-          <div className="panel-section__title">
-            Possessions
-          </div>
-
-          <div className="item-list">
-            {tourist.items.length === 0 ? (
-              <p className="panel-copy">
-                No possessions.
-              </p>
-            ) : (
-              tourist.items.map(
-                (item, index) => (
-                  <div
-                    className="item-row"
-                    key={`${item.name}-${index}`}
-                  >
-                    <span>
-                      {item.name}
-                    </span>
-
-                    <strong>
-                      {item.value}
-                    </strong>
-                  </div>
-                ),
-              )
-            )}
-          </div>
-        </section>
+        <Inventory items={tourist.items} title="Possessions" />
       </aside>
     )
   }

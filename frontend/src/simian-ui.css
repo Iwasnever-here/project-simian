@@ -26,7 +26,7 @@
   --simian-orange: #b68b5a;
   --simian-red: #b85f58;
 
-  --simian-radius: 0;
+  --simian-radius: 12px;
 }
 
 * {
@@ -60,8 +60,8 @@ button {
 }
 
 .simian-app {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100dvh;
   min-width: 0;
   min-height: 0;
 
@@ -271,13 +271,17 @@ button {
 }
 
 .simian-controls {
-  min-width: 0;
-
   display: flex;
   align-items: center;
-  gap: 8px;
-
-  padding: 0 14px;
+  align-self: center;
+  justify-self: center;
+  gap: 6px;
+  margin: 8px 12px;
+  padding: 5px;
+  border: 1px solid var(--simian-border-strong);
+  border-radius: 14px;
+  background: linear-gradient(160deg, #29362d, #161e19);
+  box-shadow: 0 3px 12px #0005;
 }
 
 .simian-button,
@@ -300,78 +304,52 @@ button {
   cursor: default;
 }
 
-.simian-button--primary {
-  width: 38px;
-  height: 38px;
-
+.simian-button--primary,
+.simian-button--spawn {
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-
-  border-radius: 0;
-
+  border-radius: 9px;
   background: var(--map-grass);
-
   color: var(--map-snow);
-
   font-weight: 800;
+}
+
+.simian-button--spawn {
+  background: #ffffff10;
+  color: var(--simian-text);
+  font-size: 20px;
+}
+
+.simian-button--spawn:hover:not(:disabled) {
+  background: #ffffff24;
 }
 
 .simian-button--primary:hover:not(:disabled) {
   background: #7f9d4d;
 }
 
-.simian-button--secondary {
-  padding: 10px 14px;
-
-  border: 1px solid var(--simian-border-strong);
-  border-radius: 0;
-
-  background: var(--simian-surface-2);
-
-  color: var(--simian-text);
-}
-
-.simian-button--secondary:hover:not(:disabled) {
-  background: var(--simian-surface-3);
-}
-
-.simian-button--wide {
-  width: 100%;
-}
-
 .speed-control {
   display: flex;
-
-  border: 1px solid var(--simian-border);
-  border-radius: 0;
-
-  overflow: hidden;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: #0c130f88;
 }
 
 .speed-control__button {
   min-width: 40px;
-  height: 36px;
-
+  height: 30px;
   padding: 0 8px;
-
-  border-right: 1px solid var(--simian-border);
-
-  background: var(--simian-surface);
-
+  border-radius: 8px;
+  background: transparent;
   color: var(--simian-muted);
-
   font-size: 12px;
 }
 
-.speed-control__button:last-child {
-  border-right: 0;
-}
-
 .speed-control__button--active {
-  background: rgba(100, 149, 237, 0.12);
-
+  background: #ffffff24;
   color: #fff;
-
-  box-shadow: inset 0 -2px 0 var(--map-water);
 }
 
 /* =========================
@@ -406,7 +384,7 @@ button {
   min-height: 0;
 
   border: 1px solid var(--simian-border);
-  border-radius: 0;
+  border-radius: var(--simian-radius);
 
   background: var(--simian-surface);
 
@@ -455,6 +433,7 @@ button {
 .population-panel {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .population-grid {
@@ -549,12 +528,6 @@ button {
   color: var(--simian-muted);
 }
 
-.population-panel > .simian-button {
-  margin: 12px;
-
-  width: calc(100% - 24px);
-}
-
 /* =========================
    WORLD
 ========================= */
@@ -571,105 +544,49 @@ button {
   overflow: hidden;
 
   border: 1px solid var(--simian-border);
-  border-radius: 0;
+  border-radius: var(--simian-radius);
 
   background: #0b120d;
 }
 
-.world-shell__viewport {
+.world-shell__viewport,
+.world-canvas-frame,
+.world-map,
+.world-map__viewport {
   position: absolute;
   inset: 0;
-
-  width: 100%;
-  height: 100%;
-
-  min-width: 0;
-  min-height: 0;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  overflow: auto;
+  overflow: hidden;
 }
 
-/*
-  The simulation viewport is intentionally fixed at 900 × 600.
-  Keeping the Pixi renderer and the DOM canvas at the same size
-  prevents terrain tiles and sprites from being stretched.
-*/
-.world-canvas-frame {
-  position: relative;
-
-  width: 900px;
-  height: 600px;
-
-  min-width: 900px;
-  min-height: 600px;
-
-  flex: 0 0 auto;
-
-  overflow: hidden;
+.world-map__viewport {
+  touch-action: none;
 }
 
 .world-canvas-frame canvas {
   display: block;
-
-  width: 900px !important;
-  height: 600px !important;
-
-  max-width: none !important;
-  max-height: none !important;
 }
-.world-shell__minimap {
-  position: absolute;
 
+.world-minimap {
+  position: absolute;
   top: 12px;
   right: 12px;
-
-  z-index: 10;
-
-  padding: 7px;
-
-  border: 1px solid rgba(158, 183, 208, 0.28);
-  border-radius: 0;
-
-  background: rgba(13, 18, 15, 0.92);
+  overflow: hidden;
+  border: 2px solid #e8e5d4b0;
+  border-radius: 8px;
+  box-shadow: 0 3px 10px #0005;
+  pointer-events: none;
 }
 
-.world-shell__overlay-label {
-  margin: 0 0 5px 2px;
-
-  font-size: 9px;
-  font-weight: 800;
-
-  letter-spacing: 0.08em;
-
-  color: var(--map-sand);
-}
-
-.world-shell__status {
+.world-map__zoom {
   position: absolute;
-
-  left: 50%;
+  left: 10px;
   bottom: 10px;
-
-  transform: translateX(-50%);
-
-  z-index: 8;
-
   padding: 6px 10px;
-
-  border: 1px solid rgba(158, 183, 208, 0.2);
-  border-radius: 0;
-
+  border-radius: 8px;
   background: rgba(13, 18, 15, 0.92);
-
   color: #d8dfd4;
-
   font-size: 11px;
-
-  
+  pointer-events: none;
 }
 
 /* =========================
@@ -1122,29 +1039,19 @@ button {
 
 @media (max-width: 950px) {
   .simian-app {
-    width: 100%;
-
     height: auto;
-    min-height: 100vh;
-
-    grid-template-rows:
-      auto
-      auto
-      auto;
-
-    overflow: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto auto;
+    overflow: visible;
   }
 
   .simian-topbar {
-    grid-template-columns:
-      minmax(0, 1fr)
-      auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .news-ticker {
     grid-column: 1 / -1;
     grid-row: 2;
-
     min-height: 44px;
   }
 
@@ -1152,35 +1059,22 @@ button {
     border-left: 0;
   }
 
-  .simian-controls {
-    border-top: 1px solid var(--simian-border);
-  }
-
   .simian-main {
-    display: grid;
-
-    grid-template-columns: 1fr;
-
+    grid-template-columns: minmax(0, 1fr);
     overflow: visible;
   }
 
   .world-shell {
     grid-row: 1;
-
-    width: 100%;
-    height: 620px;
-
-    min-height: 620px;
+    height: clamp(300px, 58svh, 600px);
   }
 
-  .population-panel,
-  .inspector-panel {
-    min-height: 360px;
+  .inspector-panel--empty {
+    min-height: 190px;
   }
 
   .event-feed {
-    grid-template-columns: 1fr;
-
+    grid-template-columns: minmax(0, 1fr);
     overflow: visible;
   }
 
@@ -1196,43 +1090,33 @@ button {
 
 @media (max-width: 650px) {
   .simian-topbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .simian-brand,
+  .simian-clock {
+    min-height: 58px;
+    border-right: 0;
+    border-bottom: 1px solid var(--simian-border);
   }
 
   .simian-brand {
-    min-height: 64px;
-
-    border-right: 0;
-    border-bottom: 1px solid var(--simian-border);
-  }
-
-  .simian-clock {
-    min-height: 58px;
-
-    border-right: 0;
-    border-bottom: 1px solid var(--simian-border);
+    padding-inline: 10px;
+    gap: 8px;
   }
 
   .simian-controls {
-    min-height: 58px;
-
-    justify-content: center;
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .news-ticker {
-    grid-column: auto;
-    grid-row: auto;
-
-    margin: 8px 12px;
+    grid-row: 3;
+    margin: 0 8px 8px;
   }
 
   .simian-main {
     padding: 8px;
-  }
-
-  .world-shell {
-    height: 620px;
-    min-height: 620px;
   }
 
   .event-feed {
@@ -1240,8 +1124,7 @@ button {
   }
 
   .event-feed__list {
-    grid-template-columns:
-      repeat(3, minmax(190px, 1fr));
+    grid-template-columns: repeat(3, minmax(190px, 1fr));
   }
 }
 
@@ -1255,8 +1138,7 @@ button {
 }
 
 .panel__eyebrow,
-.panel-section__title,
-.world-shell__overlay-label {
+.panel-section__title {
   font-family:
     "SFMono-Regular",
     Consolas,
@@ -1271,14 +1153,6 @@ button {
 
 .world-shell {
   border-color: rgba(245, 222, 179, 0.20);
-}
-
-.world-shell__minimap {
-  border-color: rgba(245, 222, 179, 0.24);
-}
-
-.world-shell__status {
-  border-color: rgba(245, 222, 179, 0.18);
 }
 
 .stat-card,
@@ -1298,14 +1172,75 @@ button {
   background: #202a22;
 }
 
-.simian-button--secondary {
-  background: #1b231d;
-}
-
-.simian-button--secondary:hover:not(:disabled) {
-  background: #232e26;
-}
-
 ::selection {
   background: rgba(100, 149, 237, 0.25);
+}
+
+.population-chart__switch {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 3px;
+  border-radius: 9px;
+  background: #0d120f;
+}
+
+.population-chart__switch button {
+  flex: 1;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--simian-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.population-chart__switch button[aria-pressed="true"] {
+  background: var(--simian-surface-3);
+  color: var(--simian-text);
+}
+
+.population-chart__plot {
+  display: flex;
+  gap: 4px;
+}
+
+.population-chart__plot svg {
+  min-width: 0;
+  flex: 1;
+  height: 76px;
+}
+
+.population-chart__grid {
+  stroke: var(--simian-border-strong);
+  stroke-width: 1;
+  fill: none;
+}
+
+.population-chart__scale,
+.population-chart__time {
+  display: flex;
+  justify-content: space-between;
+  color: var(--simian-muted);
+  font-size: 10px;
+}
+
+.population-chart__scale {
+  flex-direction: column;
+}
+
+.item-thumbnail {
+  width: 30px;
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  border: 1px dashed var(--simian-border-strong);
+  border-radius: 3px;
+  background: var(--simian-surface-3);
+  object-fit: cover;
+}
+
+.item-row__name {
+  flex: 1;
+  text-align: left;
 }

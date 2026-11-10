@@ -10,6 +10,8 @@ type Props = {
   events?: SimulationEvent[]
   onPauseToggle: () => void
   onSpeedChange: (speed: number) => void
+  spawning: boolean
+  onSpawnMonkey: () => void
 }
 
 function TopBar({
@@ -21,6 +23,8 @@ function TopBar({
   events = [],
   onPauseToggle,
   onSpeedChange,
+  spawning,
+  onSpawnMonkey,
 }: Props) {
   const [tickerIndex, setTickerIndex] = useState(0)
 
@@ -116,12 +120,14 @@ function TopBar({
         </span>
       </div>
 
-      <div className="simian-controls">
+      <div className="simian-controls" role="group" aria-label="Simulation controls">
         <button
           type="button"
           className="simian-button simian-button--primary"
           onClick={onPauseToggle}
           disabled={paused === null}
+          aria-label={paused ? 'Resume simulation' : 'Pause simulation'}
+          title={paused ? 'Resume simulation' : 'Pause simulation'}
         >
           {paused === null
             ? '...'
@@ -130,7 +136,7 @@ function TopBar({
               : 'Ⅱ'}
         </button>
 
-        <div className="speed-control">
+        <div className="speed-control" role="group" aria-label="Simulation speed">
           {[1.0, 8.0, 32.0, 64.0].map((speed) => (
             <button
               type="button"
@@ -142,11 +148,23 @@ function TopBar({
                   : 'speed-control__button'
               }
               disabled={simulationSpeed === null}
+              aria-pressed={simulationSpeed === speed}
+              aria-label={`${speed} times speed`}
             >
               {speed}×
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className="simian-button simian-button--spawn"
+          onClick={onSpawnMonkey}
+          disabled={spawning}
+          aria-label="Spawn monkey"
+          title="Spawn monkey"
+        >
+          {spawning ? '…' : '+'}
+        </button>
       </div>
     </header>
   )

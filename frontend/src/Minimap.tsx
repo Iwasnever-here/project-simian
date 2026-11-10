@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { type WorldMeta, type Viewport, TERRAIN_COLOR } from './types'
 
@@ -20,7 +20,6 @@ const MINIMAP_SIZE = 160 // px, fits the longer world dimension
 function Minimap({ worldMeta, viewport, apiBase }: MinimapProps) {
   const { width, height } = worldMeta
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -76,16 +75,12 @@ function Minimap({ worldMeta, viewport, apiBase }: MinimapProps) {
 
   return (
     <div
-      ref={containerRef}
+      className="world-minimap"
+      role="img"
+      aria-label="Island minimap"
       style={{
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        width: mapWidth,
-        height: mapHeight,
-        border: '2px solid rgba(255, 255, 255, 0.6)',
-        borderRadius: 4,
-        overflow: 'hidden',
+        width: `min(${mapWidth}px, 22vw)`,
+        aspectRatio: `${mapWidth} / ${mapHeight}`,
         backgroundColor: '#111',
         backgroundImage: thumbnailUrl ? `url(${thumbnailUrl})` : undefined,
         backgroundSize: '100% 100%', // stretch to fill - thumbnail already matches aspect

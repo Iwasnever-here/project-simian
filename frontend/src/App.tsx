@@ -10,7 +10,7 @@ import {
 } from './types'
 
 import TopBar from './components/TopBar'
-import PopulationPanel from './components/PopulationPanel'
+import PopulationPanel, { type PopulationSample } from './components/PopulationPanel'
 import EntityInspector from './components/EntityInspector'
 import EventFeed from './components/EventFeed'
 
@@ -22,6 +22,7 @@ type SimulationStatus = {
   alive: number
   total: number
   deaths: number
+  population_history?: PopulationSample[]
 }
 
 export type PendingTradeOffer = {
@@ -48,6 +49,7 @@ export type Monkey = {
   state: string
   target_monkey_id: number | null
   pending_trade_offer?: PendingTradeOffer | null
+  held_items?: InventoryItem[]
 
   traits: {
     boldness: number
@@ -74,6 +76,8 @@ export type SimulationEvent = {
   }
 }
 
+export type InventoryItem = { name: string; value: number }
+
 export type Tourist = {
   id: number
   name: string
@@ -83,10 +87,7 @@ export type Tourist = {
   alive: boolean
   pending_trade_offer?: PendingTradeOffer | null
 
-  items: {
-    name: string
-    value: number
-  }[]
+  items: InventoryItem[]
 }
 
 const API_BASE =
@@ -108,6 +109,8 @@ function App() {
 
   const [monkeyDeaths, setMonkeyDeaths] =
     useState<number | null>(null)
+
+  const [populationHistory, setPopulationHistory] = useState<PopulationSample[]>([])
 
   const [spawning, setSpawning] =
     useState(false)
@@ -223,6 +226,7 @@ function App() {
             setAliveMonkeys(data.alive)
             setTotalMonkeys(data.total)
             setMonkeyDeaths(data.deaths)
+            setPopulationHistory(data.population_history ?? [])
           },
         )
         .catch((error) => {
@@ -444,6 +448,8 @@ function App() {
         onSpeedChange={
           handleSpeedChange
         }
+        spawning={spawning}
+        onSpawnMonkey={handleSpawnMonkey}
       />
 
       <main className="simian-main">
@@ -451,10 +457,7 @@ function App() {
           alive={aliveMonkeys}
           deaths={monkeyDeaths}
           total={totalMonkeys}
-          spawning={spawning}
-          onSpawnMonkey={
-            handleSpawnMonkey
-          }
+          history={populationHistory}
         />
 
         <section className="world-shell">
@@ -471,25 +474,11 @@ function App() {
                 hour={worldMeta.hour}
               />
 
-              <div className="world-shell__minimap">
-                <div className="world-shell__overlay-label">
-                  MINIMAP
-                </div>
-
-                <Minimap
-                  worldMeta={worldMeta}
-                  viewport={viewport}
-                  apiBase={API_BASE}
-                />
-              </div>
-
-              <div className="world-shell__status">
-                Day {worldMeta.day}
-                {' · '}
-                {formatTime(
-                  worldMeta.hour,
-                )}
-              </div>
+              <Minimap
+                worldMeta={worldMeta}
+                viewport={viewport}
+                apiBase={API_BASE}
+              />
             </div>
           </div>
         </section>

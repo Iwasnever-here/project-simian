@@ -149,6 +149,8 @@ class World:
         for _ in range(300):
             self.spawn_random_monkey()
 
+        self.population_history = [self.population_sample()]
+
         # Simulation events
         self.events = []
         self.next_event_id = 1
@@ -897,6 +899,9 @@ class World:
                 time.perf_counter() - start
             )
 
+            if self.tick == 0:
+                self.population_history.append(self.population_sample())
+
         self.profile["world_update"] += (
             time.perf_counter() - world_start
         )
@@ -938,6 +943,16 @@ class World:
 
         if self.day % self.demographic_log_interval == 0:
             self._print_demographic_profile()
+
+    def population_sample(self):
+        alive = len(self.monkeys)
+        return {
+            "tick": self.total_tick,
+            "day": self.day,
+            "alive": alive,
+            "total": self.total_monkeys_created,
+            "deaths": self.total_monkeys_created - alive,
+        }
 
     def get_hour_of_day(self):
         return (self.tick / TICKS_PER_DAY) * 24

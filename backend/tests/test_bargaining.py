@@ -9,6 +9,7 @@ import torch
 from fastapi.testclient import TestClient
 
 from backend.simulation.world.world import World
+from backend.simulation.world.world_constants import TICKS_PER_DAY
 from backend.simulation.agents.monkey.monkey import Monkey
 from backend.simulation.agents.monkey import monkey_learning as learning
 from backend.simulation.agents.monkey.monkey_constants import MONKEY_ACTIONS
@@ -54,6 +55,35 @@ def scene():
     world.brain_action_samples = 0
     world.deaths_since_demographic_log = {}
     return world, monkey, tourist, valuable, food
+
+
+def test_population_history_spans_the_run_on_a_fresh_request(scene, monkeypatch):
+    world, monkey, _, _, _ = scene
+    world.day = world.tick = world.total_tick = 0
+    world.total_monkeys_created = 1
+    world.demographic_log_interval = 25
+    world.population_history = [world.population_sample()]
+    monkey._wander = lambda world: None
+
+    world.tick = world.total_tick = TICKS_PER_DAY - 1
+    world.update()
+    world.monkeys.clear()
+    world.tick = TICKS_PER_DAY - 1
+    world.total_tick = 2 * TICKS_PER_DAY - 1
+    world.update()
+
+    with patch("backend.simulation.world.world.World", return_value=world):
+        api = importlib.import_module("backend.api.main")
+    monkeypatch.setattr(api, "world", world)
+    history = TestClient(api.app).get("/simulation/status").json()["population_history"]
+    assert [(sample["day"], sample["alive"], sample["deaths"]) for sample in history] == [
+        (0, 1, 0), (1, 1, 0), (2, 0, 1),
+    ]
+
+    world.update()
+    live_history = TestClient(api.app).get("/simulation/status").json()["population_history"]
+    assert live_history[:-1] == history
+    assert live_history[-1]["tick"] == 2 * TICKS_PER_DAY + 1
 
 
 def take_valuable(scene):
