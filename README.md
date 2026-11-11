@@ -1,396 +1,95 @@
 # Simian Engine
 
-Simian Engine is an agent-based simulation exploring how complex behaviour can emerge from simple rules.
+Simian Engine is an agent-based simulation about how complex behaviour can emerge from simple rules. Autonomous monkeys live on a procedurally generated island, where they look for food, interact with each other, and encounter tourists. Their decisions depend on their needs, traits, and what they can see or remember.
 
-The simulation places autonomous monkeys inside a procedurally generated island environment. Rather than scripting high-level outcomes directly, each monkey acts using local information such as its needs, traits, memory, surroundings, other monkeys, and tourists.
+The project explores whether monkeys can learn useful strategies for survival, social interaction, and trading.
 
-The long-term goal is to observe whether interesting strategies and social behaviours emerge from relatively simple underlying systems.
+## Current features
 
----
+### Island and monkey behaviour
 
-## Current Features
+- A 300 × 300 island generated with OpenSimplex noise, with multiple terrain types, fruit trees, and a day/night cycle.
+- Monkeys with individual traits, health, energy, hunger, age, and life stages.
+- Food seeking, A* pathfinding, sleeping, reproduction, inherited traits, and young monkeys following a parent.
+- Local perception and memory of food locations, nearby monkeys, tourists, and visible possessions.
 
-### Procedural World
+### Tourists and trading
 
-- Procedurally generated island terrain
-- OpenSimplex-based terrain generation
-- Multiple terrain types
-- 300 × 300 world
-- Chunk-based rendering
-- Interactive pan and zoom
-- Minimap
-- Day/night cycle
+Tourists arrive by boat from 08:00, travel to the temple, and wander nearby or enter it. They begin returning to the boat at 17:00.
 
-### Monkey Agents
+Monkeys can investigate, follow, scare, and steal from tourists. Stolen food can be eaten. Stolen valuables stay in the monkey’s inventory and can be returned in a trade.
 
-Each monkey has individual traits including:
+A tourist who spots a nearby monkey holding one of their stolen valuables can offer food in exchange. The tourist offers the highest-value food they carry that costs no more than the stolen item. The monkey can accept, reject, or ignore the offer. Acceptance returns the exact stolen item and feeds the monkey. Offers expire after 30 ticks, and fleeing or departing can cancel them.
 
-- Boldness
-- Curiosity
-- Sociability
-- Memory
-- Aggression
+### Learning
 
-Monkeys also track internal state such as:
+Each monkey uses a PyTorch model to score the actions available to it. The simulation checks which actions are valid and handles their effects. Monkeys record experiences and train on rewards from outcomes such as finding food or losing health.
 
-- Health
-- Energy
-- Hunger
-- Age
-- Life stage
-- Sex
-- Parents
-- Known monkeys
-- Known tourists
+The learning curriculum introduces survival actions first, social actions from day 25, and more social actions from day 35. Tourist actions, including accepting and rejecting trades, unlock from **day 45**. Whether a trade happens depends on the tourist’s inventory, the agents’ positions, and the monkey’s decision.
 
-Agents can currently:
+### Interface
 
-- Wander around the island
-- Search for food
-- Remember food locations
-- Use A* pathfinding
-- Eat fruit
-- Lose energy through movement
-- Take damage from starvation and exhaustion
-- Sleep
-- Reproduce
-- Inherit traits from their parents
-- Follow a parent while young
-- Observe nearby monkeys
-- Remember other monkeys
-- Observe tourists
-- Investigate tourists
-- Watch, follow, or scare tourists depending on their traits
+- Responsive PixiJS map with chunked rendering, pan and zoom, a minimap, and distinct monkey and tourist markers.
+- Top controls for pausing, resuming, changing speed, and spawning monkeys.
+- Population charts for alive monkeys, deaths, and total monkeys created. The charts show the full current run from day 0 using daily snapshots and the latest count.
+- Monkey and tourist inspectors showing condition, behaviour, inventories, and pending trade offers. Portraits and items have square image placeholders.
+- An event feed showing births, thefts, and offers that were made, accepted, rejected, expired, or cancelled.
 
----
-
-## Tourists
-
-Tourists periodically arrive on the island by boat and travel toward the temple.
-
-Their behaviour currently includes:
-
-- Arriving near the temple in the morning
-- Travelling to the temple
-- Wandering around the temple area
-- Entering the temple
-- Staying for a random period
-- Returning to the boat later in the day
-- Leaving the island
-
-Monkeys can observe tourists and remember information about them.
-
-Tourists can also carry visible possessions. These possessions are intended to become part of a broader interaction system where monkeys may investigate, grab, exchange, drop, or learn from interactions with human objects.
-
-The goal is to avoid explicitly scripting concepts such as "stealing". Instead, behaviours should emerge from more general actions and their consequences.
-
----
-
-## Agent Memory
-
-Monkeys have limited knowledge of the world.
-
-They do not have access to the complete simulation state.
-
-Instead, they build memories from things they have previously observed.
-
-Examples include:
-
-- Known food locations
-- Known monkeys
-- Last known monkey positions
-- Known tourists
-- Last known tourist positions
-- Visible tourist possessions
-
-This allows behaviour to depend on imperfect and potentially outdated information.
-
----
-
-## Learning Direction
-
-Simian Engine is gradually moving toward learned decision-making.
-
-The simulation keeps two concepts separate:
-
-1. Action selection
-2. Action execution
-
-For example, the simulation may provide an action such as:
-
-```text
-grab_item
-```
-
-The world determines whether that action is physically valid and executes it.
-
-The monkey's decision system determines whether attempting that action is worthwhile.
-
-Keeping these systems separate makes it possible to replace rule-based decision-making with learned policies later without rewriting the underlying simulation mechanics.
-
-Current experiments also include recording agent experiences and training values for possible reinforcement-learning-based behaviour.
-
----
+Population history survives a browser refresh. Restarting the backend starts a new simulation because the world and its history are stored in memory.
 
 ## Architecture
 
-The project is split into a simulation backend and visual frontend.
+| Part | Stack | Responsibility |
+| --- | --- | --- |
+| Backend | Python, FastAPI, PyTorch, OpenSimplex | World generation, simulation state, agent behaviour and learning, and API endpoints |
+| Frontend | React, TypeScript, Vite, PixiJS | Map rendering, controls, entity inspectors, population charts, and the event feed |
 
-### Backend
+## Run locally with Docker
 
-Built with:
-
-- Python
-- FastAPI
-
-The backend is responsible for:
-
-- Simulation state
-- Monkey behaviour
-- Tourist behaviour
-- World generation
-- Pathfinding
-- Agent memory
-- Reproduction
-- Health and needs
-- Interactions
-- Simulation rules
-
-### Frontend
-
-Built with:
-
-- React
-- TypeScript
-- Vite
-- PixiJS
-
-The frontend is responsible for:
-
-- Rendering the world
-- Rendering monkeys and tourists
-- Camera controls
-- Agent selection
-- Entity inspectors
-- Population information
-- Event feeds
-- Simulation controls
-- Minimap rendering
-
-The frontend does not control agent behaviour.
-
----
-
-## Interface
-
-The simulation UI currently contains:
-
-- World viewport
-- Top information bar
-- Population panel
-- Entity inspector
-- Event feed
-- Simulation time display
-- Map position display
-- Minimap
-- Monkey and tourist selection
-
-The main simulation viewport uses PixiJS and currently runs inside a fixed `900 × 600` render area.
-
----
-
-## Running the Project
-
-The easiest way to run Simian Engine is using Docker Compose.
-
-### Requirements
-
-Make sure the following are installed:
-
-- Docker Desktop
-- Docker Compose
-- Git
-
-Check Docker:
+Install Git and Docker Desktop with Docker Compose, then start Docker Desktop.
 
 ```bash
-docker --version
-```
-
-Check Docker Compose:
-
-```bash
-docker compose version
-```
-
----
-
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-```
-
-Move into the project directory:
-
-```bash
-cd simian-engine
-```
-
----
-
-### 2. Start Docker Desktop
-
-Make sure Docker Desktop is running before starting the project.
-
----
-
-### 3. Build and Run
-
-From the root of the project, run:
-
-```bash
+git clone https://github.com/Iwasnever-here/project-simian.git
+cd project-simian
 docker compose up --build
 ```
 
-This builds and starts both the backend and frontend services.
+Open the [simulation](http://localhost:5173) in your browser. The backend runs on port `8000`, and its [interactive API documentation](http://127.0.0.1:8000/docs) lists the available endpoints.
 
-The first build may take longer because Docker needs to install the project dependencies.
+| Endpoint | What it shows |
+| --- | --- |
+| [`/simulation/status`](http://127.0.0.1:8000/simulation/status) | Simulation speed, pause state, current population, and population history |
+| [`/events`](http://127.0.0.1:8000/events) | The latest 100 simulation events. Search for `tourist_trade_accepted` to find completed trades. |
+| `/monkeys/{id}/brain-debug` | A monkey’s training loss, experience count, and action scores |
 
----
-
-### 4. Open the Simulation
-
-Once the containers are running, open:
-
-```text
-http://localhost:5173
-```
-
-in your browser.
-
-This loads the React + PixiJS frontend.
-
----
-
-## Backend
-
-The simulation backend is built using FastAPI.
-
-When the Docker containers are running, the backend runs as a separate service and provides the simulation state used by the frontend.
-
-FastAPI's automatic API documentation can also be accessed through the backend's `/docs` endpoint if exposed by the Docker configuration.
-
-For example:
-
-```text
-http://localhost:<backend-port>/docs
-```
-
----
-
-## Stopping the Simulation
-
-To stop the running containers, press:
-
-```text
-Ctrl + C
-```
-
-inside the terminal running Docker Compose.
-
-You can then remove the containers with:
+Press `Ctrl+C` to stop an attached Compose session. Use `docker compose down` to stop and remove the containers.
 
 ```bash
-docker compose down
+docker compose ps
+docker compose logs -f backend
 ```
 
----
+The backend prints world and monkey performance profiles every 1,000 ticks. After changing backend Python code, run `docker compose restart backend` to load it. This resets the simulation. Rebuild with `docker compose up --build` after dependency or Docker configuration changes.
 
-## Rebuilding After Changes
+## Development checks
 
-If dependencies or Docker configuration have changed, rebuild using:
+Run the backend tests from the repository root in the Python development environment.
 
 ```bash
-docker compose up --build
+python -m pytest backend/tests -q
 ```
 
-For normal code changes, the development environment may reload automatically depending on which service was changed.
-
----
-
-## Viewing Running Containers
-
-To see which containers are currently running:
+Run the frontend checks from the `frontend` directory.
 
 ```bash
-docker ps
+npm ci
+npm run lint
+npm run build
+node --test tests/selection.test.mjs
 ```
 
----
+## Development direction
 
-## Viewing Logs
+The next step is to observe trading across longer simulation runs and see how often theft leads to an offer, which offers monkeys accept, and how those choices affect survival. Future work may explore more varied tourist responses, trade negotiation, and richer social behaviour among monkeys.
 
-To view Docker Compose logs:
-
-```bash
-docker compose logs
-```
-
-To continuously follow them:
-
-```bash
-docker compose logs -f
-```
-
----
-
-## Restarting the Project
-
-If something gets stuck:
-
-```bash
-docker compose down
-```
-
-Then restart:
-
-```bash
-docker compose up --build
-```
-
----
-
-## Development Direction
-
-Current priorities include:
-
-- Improving tourist possession visibility
-- Improving monkey memory of tourist possessions
-- Generalising monkey/item interactions
-- Adding difficulty and consequences to item grabbing
-- Tourist reactions to monkey behaviour
-- Item-for-food exchanges
-- Remembering interaction outcomes
-- Improving decision-making from previous experiences
-
-Possible future systems include:
-
-- More advanced social behaviour
-- Monkey groups
-- Tourist economies
-- Emergent food-trading strategies
-- Predators
-- Disease
-- More detailed statistics
-- Learned behaviour using reinforcement learning or neural networks
-
-These systems are intentionally being introduced gradually so that complex behaviour grows from understandable foundations rather than becoming a collection of scripted behaviours.
-
----
-
-## Core Question
-
-> How much complex behaviour can emerge from simple agents operating under limited information, memory, needs, personality traits, and environmental constraints?
-
-That question drives the design of Simian Engine.
+> How much complex behaviour can emerge from agents with limited information, memory, individual traits, and basic needs?
