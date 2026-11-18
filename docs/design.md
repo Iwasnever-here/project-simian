@@ -1,10 +1,28 @@
 # Project Simian: Design Document
 
-# dumping ground
-# monkey vs monkey damage
-# polar bear hunting at night
-# tourists steal
-# 
+Last reviewed on **18 November 2026**. Implemented decisions below reflect the current working tree. Future systems remain proposals. Detailed checks and unresolved review findings are tracked in [progress.md](progress.md).
+
+## Current decisions
+
+| Decision in use | Reason and consequence |
+| --- | --- |
+| The Python world owns behaviour and inventory mutations. React/PixiJS consumes snapshots. | Decision policy, execution rules, and rendering remain independently inspectable. The current API process owns one in-memory world. |
+| Use a world `threading.RLock` around simulation updates and complete snapshot/transaction operations. | Nested world methods can acquire the same lock. The review found incomplete locking in the tree and brain-debug handlers that still needs correction. |
+| Each monkey has its own 21-input, 32/32-hidden-layer Q network and replay buffer. | Simple independent learning with limited local observations. Rare experiences are fragmented across agents. Shared/batched policies remain future experiments. |
+| Restrict both action selection and bootstrap targets to valid actions. | An unavailable trade or interaction must not inflate the value of a transition. Replay stores the next-action mask. |
+| Close a learning transition at the next actual decision. | The next state includes intervening tourist offers and other agent updates. Reuse those observations and finalise deaths terminally. Sleeping can span several ticks, so discount-per-tick versus discount-per-decision semantics still needs a decision. |
+| Start with a single valuable exchanged for a single actual food item. | Preserve exact ownership and a small transaction surface. The tourist chooses the highest-value food within the stolen item's value budget. Its offer-generation policy is deterministic given the eligible inventory. |
+| Address offer responses by offer ID independently of tourist target and theft cooldown. | Theft clears targeting, but the monkey must still be able to respond to a visible incoming offer. Acceptance revalidates before moving the exact items. |
+| Offer lifetime and retry cooldown are both 30 simulation ticks. | Uses monotonic `total_tick`. Proximity, participants, inventories, fleeing, temple status, and departure can close offers early. |
+| Keep population history in the backend from day 0, with daily snapshots plus a current API sample. | Full-run trends survive a browser refresh. Data resets with the backend and the complete history is currently sent on each status poll. |
+| Resize the Pixi renderer to its panel and use its measured dimensions for interactions. | Viewport bounds, chunk requests, hit testing, and minimap coordinates follow screen size. Preserve the camera centre and dispose distant textures. |
+| Keep the latest 100 events for the feed. | Suitable for current activity. Experiment totals need separate run counters or export. |
+| Disable forced theft preference by default. | `SIMIAN_DEBUG_FAVOUR_STEALING` is an explicit mechanic-testing switch. Evaluation must record its setting. |
+
+These choices support tested mechanics. Existing checks verify transactions and learning records. Ordinary-run acceptance rates and baseline comparisons remain open.
+
+Future ideas retained from the original notes include additional monkey conflict, night predators, and tourists taking items. They are outside the implemented scope.
+
 
 ## Core Idea
 
@@ -98,7 +116,7 @@ The player can:
 
 - Inspect entities without affecting the simulation
 
-The mouse wheel should control map zoom while over the simulation rather than scrolling the webpage.
+The mouse wheel zooms over the map through a non-passive wheel listener. Renderer resizing uses the panel dimensions, and the camera preserves the viewed centre. The map has no fixed 900 × 600 requirement. Minimap text has been removed and zoom appears within the map. Desktop and narrow-screen visual verification remains pending.
 
 ### Minimap
 
@@ -134,7 +152,7 @@ Fruit acts as one of the monkeys' primary food sources.
 
 Fruit should:
 
-- Restore energy
+- Reduce hunger
 
 - Respawn over time
 
@@ -927,182 +945,67 @@ These can combine to create different tourist personalities.
 
 ## 23. Robbery / Theft
 
-The long-term central interaction is monkeys discovering that tourist belongings can produce food.
+The current brain-controlled `steal_item` action transfers one possession from the selected visible tourist within interaction range. Valuables remain held and retain exact original-owner/thief tracking. Food is immediately consumed. A successful transfer emits a theft event.
 
-The monkey should ****not begin with knowledge that stealing an expensive item gets food****.
+Theft starts an interaction cooldown and clears the ordinary tourist target. Incoming trade responses bypass that targeting requirement. Difficulty, guarding, and increasing caution after theft remain planned.
 
-Instead:
+### Current tourist response and trading
 
-```text
+1. The tourist finds a visible nearby monkey still holding one of its stolen valuables.
+2. It prioritises its highest-value eligible valuable and selects the highest-value real food item with positive finite value no greater than that valuable. Food must have positive finite hunger restoration.
+3. The world creates one pending offer per participant, valid for 30 `total_tick` ticks.
+4. The tourist pauses normal movement while waiting. Rejection, acceptance, expiry, or cancellation starts a 30-tick retry cooldown.
+5. The monkey can accept, reject, or ignore the offer after tourist actions unlock at day 45.
+6. Acceptance holds the world lock, verifies the original participants, ownership, distance, food, and lifetime, consumes the offer, returns the exact valuable, consumes food, and restores hunger once.
+7. The world logs offered, accepted, rejected, expired, and cancelled outcomes.
 
-Monkey encounters tourist
+Fleeing and departure retain priority. Trading closes at 17:00 and invalid participants, temple status, or lost proximity cancel offers.
 
-↓
+The current transfer rule for stolen food clears all hunger. Exchanged food restores only its `hunger_restore`. This balance difference is recorded for evaluation.
 
-Notices visible item
-
-↓
-
-Attempts interaction / theft
-
-↓
-
-Tourist reacts
-
-↓
-
-Monkey experiences outcome
-
-↓
-
-Information influences future behaviour
-
-```
-
-This is where the project can eventually move from rule-based agents toward actual learning.
-
-### Tourist Response
-
-After being robbed once:
-
-```text
-
-awareness / steal difficulty increases
-
-```
-
-for their remaining possessions until they leave the island.
-
-Repeatedly targeting one tourist therefore becomes progressively harder.
-
-This creates a natural incentive to choose targets.
+Counteroffers, changing prices after rejection, food bundles, tourist generosity/awareness traits, and persistent item IDs are future work.
 
 **---**
 
 ## 24. Current Learning System
 
-The neural learning system is now active.
+Each monkey owns a feed-forward network with **21 inputs, two 32-unit ReLU hidden layers, and 17 output scores**. Sixteen actions belong to the controlled policy. The wider list also includes `follow_mother`, principally executed through infant dependency rules.
 
-The current approach is a DQN-style reinforcement-learning system in which each monkey stores experiences containing:
+### Observation and available actions
 
-```text
-state
-action
-reward
-next_state
-done
-```
+The input contains hunger, energy, health, five traits, maturity, day/night, food/monkey/tourist visibility and distances, tourist possessions, held-item state, tourist target status, pending-offer availability, and offered hunger benefit.
 
-The brain currently receives an 18-value state vector containing information such as:
+Brain-controlled actions include survival, social interactions, tourist investigation/watch/follow/scare/leave, theft, and trade acceptance/rejection. Curriculum filtering introduces basic social actions at day 25, further social actions at day 35, and tourist actions at day 45. Infant following and urgent-food continuation include explicit rules.
 
-```text
-hunger
-energy
-health
-boldness
-curiosity
-sociability
-memory
-aggression
-maturity
-day/night
-food visibility
-food distance
-monkey visibility
-monkey distance
-tourist visibility
-tourist distance
-tourist item visibility
-held-item state
-```
+Only valid actions can be selected. Offer responses require the monkey's own valid visible offer and use its ID, independently of ordinary targeting and theft cooldown.
 
-### Monkey Actions
+### Reward and experience boundaries
 
-The wider monkey action vocabulary currently includes:
+Hunger reduction is weighted by previous hunger, with health and energy deltas contributing to survival reward. Tourist investigation arrival and successful interactions also have small trait-weighted bonuses, including theft. Invalid interactions receive a penalty. The repeated tourist bonuses and food restoration differences need experiment-driven assessment.
 
-```text
-wander
-seek_food
-seek_shelter
-follow_mother
-approach_monkey
-avoid_monkey
-follow_monkey
-confront_monkey
-socialise
-investigate_tourist
-watch_tourist
-follow_tourist
-scare_tourist
-grab_item
-leave_tourist
-```
+The active replay record contains state, action, accumulated reward, next state, terminal flag, and next-valid-action indices. A transition closes immediately before the next normal policy decision using its current observation, after other world agents have updated between turns. Pending rewards accumulate through sleeping ticks, and death closes the transition terminally.
 
-Only a subset is currently controlled by the main brain while the remaining systems are introduced incrementally.
+The present implementation treats each decision transition with one discount factor regardless of how many sleeping ticks it spans. Review the intended temporal objective before introducing more long-duration actions.
 
-The current brain-controlled set includes:
+### Training
 
-```text
-wander
-seek_food
-seek_shelter
-follow_mother
-approach_monkey
-```
+- Epsilon-greedy exploration with epsilon 0.1.
+- At most 1,000 replay experiences per monkey, with random batches of 32.
+- Training every 100 ticks, staggered by monkey ID.
+- Adam optimiser at learning rate 0.001, MSE loss, and gradient clipping at norm 1.
+- Nonterminal target of reward plus `0.95 × max Q(next_state, valid_next_action)`.
+- Terminal and empty-mask experiences use reward only.
+- Current and detached bootstrap Q-values both come from the online network.
 
-Infants are still handled by the hard mother-follow rule before the normal brain decision pathway, so `follow_mother` should not be treated as a substitute for infant dependency logic.
+A separate target network, shared policy, batched training, persistent checkpoints, and learned item-specific valuations remain experiments.
 
-### Reward
+### Evidence standard
 
-The reward signal is based on survival-related changes rather than directly rewarding a named behaviour.
+Automated tests establish state dimensions, curriculum masks, next-decision timing, execution, transaction invariants, and finite optimisation steps. Earlier short normal-island samples produced sparse thefts and zero offers. Repeatable ordinary-run exchanges and policy improvement still require full-run opportunity metrics and matched-seed baseline comparisons.
 
-Current reward components include:
+The inactive legacy `finalize_tourist_experience()` scaffolding is incompatible with the current `Experience` constructor and needs review before reuse.
 
-```text
-hunger improvement
-health change
-energy change
-```
-
-Food reward is scaled by how hungry the monkey was before eating, so reducing hunger is more valuable when the monkey genuinely needs food.
-
-The project should continue avoiding rewards such as:
-
-```text
-+10 for stealing
-```
-
-Instead, actions should become useful because of the consequences they produce.
-
-### Experience Replay and Training
-
-Each monkey stores a bounded replay history and periodically samples batches for training.
-
-Training uses predicted Q-values, discounted future Q-values and mean-squared error loss. Gradient clipping is used during optimisation.
-
-Training is staggered across monkeys using their IDs and the world tick so that every monkey does not train on the same simulation tick.
-
-### Current Learning Goal
-
-The immediate goal is not to make the neural network control everything at once.
-
-Instead:
-
-```text
-add one meaningful action
-↓
-verify state information
-↓
-verify reward signal
-↓
-observe behaviour
-↓
-profile performance
-↓
-then expand
-```
-
-This keeps the learned behaviour interpretable while the environment becomes more complex.
+**---**
 
 ## 25. Dangers and Predators
 
@@ -1168,165 +1071,47 @@ Boldness, age, energy and previous experience could influence when a monkey choo
 
 ## 27. Simulation Statistics
 
-The UI should track important population-level information.
+The backend records population at day 0 and at the end of each day-boundary update. `/simulation/status` returns these points plus a fresh current sample, avoiding a duplicate sample at the same tick.
 
-Examples:
+The frontend Alive, Deaths, and Born graph views cover the whole backend run using simulation ticks and day labels. Browser refresh retrieves the existing history. Backend restart resets the world, history, model parameters, and replay buffers.
 
-- Current living population
+`total_monkeys_created` includes initial agents and manual spawns. The “Total Born” label therefore needs clarification or a separate natural-birth count. Deaths are derived from total created minus the living population.
 
-- Total births
+Console demographic output provides stage counts, adult genders, reproductive eligibility, interval births, and death causes. Trait distributions, food-availability charts, and generational comparisons remain future UI/analysis work.
 
-- Total deaths
-
-- Population over time
-
-- Age distribution
-
-- Average behavioural traits
-
-- Food availability
-
-- Tourist count
-
-- Successful thefts
-
-- Failed thefts
-
-- Items stolen
-
-- Causes of death
-
-Later, tracking traits across generations becomes particularly valuable.
-
-For example:
-
-```text
-
-Average boldness
-
-Generation 1: 0.49
-
-Generation 5: 0.53
-
-Generation 15: 0.67
-
-```
-
-This makes it possible to investigate whether the environment is selecting for certain behaviours rather than relying on visual impressions.
+Trade experiments need opportunity counts, offers, responses, cancellation reasons, hunger effects, and survival outcomes. The latest-100-event feed cannot supply durable full-run totals. Daily history also needs response-size and rendering-cost measurement for very long runs.
 
 **---**
 
 ## 28. Entity Inspection UI
 
-Clicking a monkey should expose information such as:
+The monkey inspector displays identity, life stage, condition, traits, behaviour, position, held items, and any pending trade offer. Tourist inspection displays identity, position, possessions, and a pending offer.
 
-```text
+Both views use shared inventory rows and square image placeholders. Pending offers identify the monkey and tourist, the requested valuable, the food offered, and remaining simulation ticks.
 
-Name
+Requests are aborted on selection changes, results are associated with the requested URL, and a 404 clears a removed entity. Offer summary reads hold the world lock and do not expire or create offers.
 
-Age
-
-Life stage
-
-Sex
-
-Health
-
-Energy
-
-Traits
-
-Parents
-
-Current behaviour
-
-Known monkeys
-
-Known tourists
-
-```
-
-Tourists should also be clickable.
-
-Tourist information could include:
-
-```text
-
-State
-
-Current destination
-
-Time on island
-
-Visible possessions
-
-Behavioural traits
-
-Whether previously robbed
-
-```
-
-Items should have their own UI component rather than placing all item display logic directly inside the tourist component.
+Social/tourist memory detail, richer tourist behaviour/destination display, relationship history, and supplied image assets remain future additions. Layout verification at desktop and narrow widths remains outstanding.
 
 **---**
 
 ## 29. Simulation Controls
 
-The UI should support:
+The compact top control strip provides pause/resume, 1×/8×/32×/64× speed selection, and manual monkey spawn. The header also shows simulation day and time. Map controls provide pan and wheel zoom.
 
-- Pause
+The backend tracks pause and speed separately from the world and advances one awaited update at a time using `asyncio.to_thread`. The loop sleeps for `1.0 / speed` seconds after computation. Effective tick rate includes computation time, so requested speed is not guaranteed throughput.
 
-- Resume
-
-- Simulation speed
-
-- Time/day display
-
-- Camera zoom
-
-- Camera pan
-
-Backend simulation state separates:
-
-```text
-
-simulation_paused
-
-simulation_speed
-
-```
-
-from the underlying world.
+The app currently owns one process-local world. Additional Uvicorn workers would create separate worlds. A simulation owner with a command/snapshot boundary is future scaling work.
 
 **---**
 
 ## 30. Events
 
-Important events can be surfaced beneath or alongside the world.
+Current events include births, successful theft, and each offered/accepted/rejected/expired/cancelled trade outcome. Events carry a unique ID, simulation tick/day, message, and relevant participant/item data.
 
-Examples:
+Acceptance is logged after the successful exchange, so failed or repeated acceptance cannot emit a second accepted event. The frontend renders recent events beneath the map and in the header ticker.
 
-```text
-
-Monkey born
-
-Monkey died
-
-Tourist boat arrived
-
-Monkey stole item
-
-Monkey injured
-
-Group formed
-
-Predator attack
-
-```
-
-Events should remain selective.
-
-Generating an event for every piece of fruit eaten would make the event feed noisy and less useful.
+The backend keeps only 100 events. Separate full-run counters or export are required for reliable experimental totals. Deaths, arrivals, injuries, groups, and predator events remain future logging or feature work.
 
 **---**
 
@@ -1442,9 +1227,9 @@ social interaction logic
 tourist interaction logic
 ```
 
-A fresh post-action observation is still generated for the reinforcement-learning `next_state`, because the learning transition must represent the world after the action.
+The next actual decision observation now supplies the preceding experience's `next_state` and valid-action mask. This includes intervening tourist offers and removes the former repeated post-action scan. Sleeping transitions accumulate reward until the next decision or death.
 
-### Benchmark Result
+### Historical Benchmark Result
 
 Before observation reuse:
 
@@ -1462,7 +1247,7 @@ monkeys:      696.653 ms/tick
 
 This is approximately a **26% reduction in tick time**.
 
-Current monkey profile after the optimisation:
+Historical monkey profile after the observation-reuse optimisation:
 
 ```text
 total:              3.203 ms/monkey-update
@@ -1479,7 +1264,7 @@ movement:           0.002 ms/monkey-update
 sleep:              0.000 ms/monkey-update
 ```
 
-The current dominant costs are therefore observation and post-action experience generation rather than neural-network training itself.
+These timings were recorded before the current transition changes. They are historical evidence and need a matched-workload rerun before identifying current dominant costs.
 
 ### Performance Targets
 
@@ -1501,7 +1286,7 @@ The purpose of optimisation is not just to make the UI feel faster. It is to mak
 
 - Profile food, monkey and tourist observation separately
 - Reduce expensive tree scans using spatial/chunk-based lookup
-- Avoid repeated post-action work where the learning semantics can be preserved
+- Reprofile observation and next-decision experience work after the implemented scan reuse
 - Reuse A* paths when targets have not changed
 - Avoid asking the neural brain for a completely new high-level decision every simulation tick
 - Consider shared or batched neural inference later
@@ -1529,9 +1314,9 @@ Population debugging should track:
 
 ### Performance
 
-The current largest CPU costs are monkey observation and creation of post-action learning experiences.
+Reprofile the current update path after the next-decision transition change. Nearby-monkey visibility scans the population for every monkey, while shelter lookup scans loaded trees.
 
-The next profiling step should split observation into:
+Existing observation timers already separate:
 
 ```text
 fruit observation
@@ -1539,7 +1324,7 @@ monkey observation
 tourist observation
 ```
 
-Tree lookup is a particularly important candidate because thousands of loaded trees may currently be scanned during visibility checks.
+Fruit visibility uses bounded tile/chunk lookup. Global nearest-fruit and nearest-shelter helpers still scan loaded trees. UI chunk requests also initialise tree chunks, so camera independence needs evaluation before browser-attached runs are considered reproducible.
 
 ### Brain Architecture
 
@@ -1611,7 +1396,7 @@ Expand generic interactions:
 - Leave
 - Grab item
 
-### Phase 5 - Theft and Consequences
+### Phase 5 - Theft and Consequences (transfer implemented; difficulty remains)
 
 Add:
 
@@ -1621,7 +1406,7 @@ Add:
 - Increased tourist awareness after robbery
 - Item dropping / possession transfer rules
 
-### Phase 6 - Tourist Economy
+### Phase 6 - Tourist Economy (single-item exchange implemented; evaluation remains)
 
 Add:
 
@@ -1669,7 +1454,7 @@ Introduce:
 - Tree climbing
 - Escape behaviour
 
-### Phase 11 - Simulation Analysis
+### Phase 11 - Simulation Analysis (full-run population charts implemented)
 
 Track:
 

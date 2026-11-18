@@ -2,9 +2,36 @@
 
 ## Current Status
 
-Project Simian currently has the foundations of the world simulation, autonomous monkey agents, reproduction and inheritance, social perception, memory, and the first tourist systems.
+Last reviewed on **18 November 2026** against the working tree and its automated checks.
 
-The current development focus is **brain-controlled monkey-tourist interactions and food/item stealing**. Tourist investigation and interaction actions are now wired into the main neural network, but watching, following and scaring are rarely selected. The next milestone is one verified successful theft in the existing island simulation, without building a separate testing world.
+The island simulation, reproduction, local perception, memory, neural action selection, tourist theft, and food-for-valuable exchanges are implemented. Monkeys can accept or reject their own visible offers independently of theft cooldown and tourist targeting. Inventory transfer and offer expiry are verified by tests through the normal world-update and decision paths.
+
+The frontend has a responsive PixiJS viewport, minimap, compact top controls, entity inspectors, square image placeholders, held-item displays, pending offers, and event labels for the full trade lifecycle. Population charts cover the current simulation run from day 0 using backend daily snapshots plus a live sample.
+
+The immediate focus is measuring whether normal agents encounter eligible offers and learn to accept useful ones. A successful controlled exchange establishes the mechanic. Natural acceptance rates and improvement against a baseline still need measurement.
+
+### Verification on 18 November 2026
+
+- Backend regression suite passed, **56 tests**.
+- Frontend selection regression suite passed, **3 tests**.
+- Frontend application TypeScript check and Oxlint passed.
+- These checks cover trade validity, exact item identity, repeat acceptance, offer visibility and response dispatch, delayed next-decision learning records, API brain diagnostics, population history, and stale selections.
+- Responsive layout and the new markers have passed compilation and a previous production build. Desktop and narrow-screen visual verification remains pending because the previous browser automation check was blocked.
+- The dependency environment emits pytest/AnyIO and Starlette/httpx deprecation warnings.
+
+### Review findings still open
+
+1. **P1 — Consistent API snapshots.** `get_tree_states()` iterates the mutable tree dictionary without `world.lock`. Simulation observations and chunk loading can add trees concurrently. `get_monkey_brain_debug()` also reads and evaluates a brain after the entity lookup lock has been released, while training can update its parameters. Guard each complete read or build an immutable snapshot under the lock. The three other brain endpoints and entity detail endpoints already hold the lock. See [API handlers](../backend/api/main.py).
+
+2. **P2 — Diagnostics can perturb experiments.** The brain-choice GET endpoint uses epsilon-greedy selection and consumes the same global Python random stream as simulation behaviour. Brain observation can also generate tree chunks and expire trade offers. Displaying diagnostics can therefore change subsequent stochastic outcomes. Separate diagnostic policy inspection and observation from simulation mutations before claiming repeatable browser-attached experiments. See [brain-choice endpoint](../backend/api/main.py) and [learning helpers](../backend/simulation/agents/monkey/monkey_learning.py).
+
+3. **P2 — Sleeping transitions span multiple ticks.** Pending rewards accumulate while a monkey sleeps and the transition closes at its next decision. The replay record has no duration and the target applies `GAMMA` once. Define whether discounting is per decision or per simulation tick. Per-tick discounting requires elapsed duration and appropriately discounted rewards. See [experience model](../backend/simulation/agents/experience.py) and [training](../backend/simulation/agents/monkey/monkey_learning.py).
+
+4. **P2 — Sparse trades and reward balance.** Tours require a stolen valuable, the original owner, affordable food, proximity, and time before departure. Stolen food currently clears all hunger, while exchanged food uses its own `hunger_restore`. Some tourist interactions also receive repeatable action bonuses. Measure opportunities and outcomes before changing these incentives.
+
+5. **P2 — Reporting and replay limits.** The event buffer keeps only 100 events, so counting retained events does not give full-run trade totals. Population history grows one entry per day and is returned in full on each status poll. Worlds, history, model parameters, and replay buffers reset with the backend process. Run-level metrics, persistence, and long-run history transfer costs remain open.
+
+6. **P3 — Legacy helpers and timer conventions.** `finalize_tourist_experience()` still calls an absent `_get_tourist_state()` and constructs `Experience` without required `done`. The active path uses `finalize_brain_experience()`. Tourist temple deadlines still use day-local `tick`, while trade expiry uses `total_tick`. Current 17:00 departure limits midnight exposure, but the timer convention needs alignment before extending visits overnight.
 
 **---**
 
@@ -40,37 +67,24 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 ## World Rendering
 
-### Completed
+### Implemented
 
-- [x] React frontend
+- [x] React, TypeScript, and PixiJS rendering.
+- [x] Visible chunk loading and disposal of distant terrain textures.
+- [x] Pan, cursor-centred wheel zoom, and entity selection.
+- [x] Renderer dimensions and hit area follow the map panel through `ResizeObserver`.
+- [x] Camera centre is retained when the panel changes size.
+- [x] Minimap thumbnail and current viewport rectangle.
+- [x] Removed minimap heading and placed zoom information over the viewport.
+- [x] Detailed monkey faces/tails and tourist clothing/hats.
+- [x] Compact top pause, speed, and spawn controls.
+- [x] Wheel zoom prevents page scrolling and map pointer cancellation clears dragging.
 
-- [x] TypeScript frontend
+### Verification / Future
 
-- [x] PixiJS world rendering
-
-- [x] Camera panning
-
-- [x] Camera zoom
-
-- [x] Chunk-based rendering
-
-- [x] Monkey rendering
-
-- [x] Tourist rendering
-
-### In Progress / Issues
-
-- [ ] Fix minimap rendering
-
-- [ ] Improve minimap viewport indicator
-
-- [x] Prevent mouse wheel from scrolling page while zooming world
-
-- [x] Fix entity popup error
-
-### Future
-
-- [ ] Click minimap to reposition camera
+- [ ] Complete visual QA at desktop, tablet, and narrow-screen widths.
+- [ ] Click minimap to reposition camera.
+- [ ] Replace image placeholders with assets when supplied.
 
 **---**
 
@@ -84,7 +98,7 @@ The current development focus is **brain-controlled monkey-tourist interactions 
 
 - [x] Fruit can be consumed by monkeys
 
-- [x] Fruit restores monkey energy
+- [x] Fruit reduces hunger through `Monkey.eat()`; sleeping restores energy
 
 - [x] Fruit respawning
 
@@ -670,42 +684,25 @@ Current temple capacity:
 
 ## Tourist Items
 
-### Implemented / Present in Code
+### Implemented
 
-- [x] `TouristItem` dataclass with `name`, `value`, `kind`, and optional `hunger_restore`
+- [x] `TouristItem` stores name, value, kind, and optional hunger restoration.
+- [x] Catalogue food and valuables are copied into distinct inventory instances.
+- [x] Tourist observations remember visible item names.
+- [x] Ownership transfer removes the exact item from the tourist and adds it to the monkey.
+- [x] Stolen valuables record their original tourist and thief.
+- [x] Shared inventory UI displays held monkey items and tourist possessions with square image placeholders.
+- [x] Item value bounds the food a tourist can offer.
+- [x] Acceptance returns the exact stolen valuable and consumes the exact offered food once.
 
-- [x] Food items (`banana`, `snack`) and valuables (`sunglasses`, `phone`, `camera`, `bag`)
+### Still needed
 
-- [x] `generate_tourist_items()` samples 1–3 items from the catalogue
+- [ ] Item-specific theft difficulty and consequences.
+- [ ] Persistent item IDs for saved worlds or external commands. Current ownership uses in-memory object identity.
+- [ ] Measure the availability of suitable tourist food.
+- [ ] Reconcile food-theft hunger restoration with trading and resource balance.
 
-- [x] `Tourist.items` inventory and item names in tourist observation/memory
-
-- [x] Existing item-transfer entry points (`grab_item_monkey`, `grab_tourist_item`) in monkey tourist logic
-
-### Still Needed / Verification
-
-- [x] Verify `world.transfer_item_to_monkey()` correctly changes both inventories
-
-- [x] Implement eating stolen food using `hunger_restore`
-
-- [x] Add a brain-controlled `steal_item` action and distance/item availability mask
-
-- [ ] Dedicated frontend item component
-
-- [ ] Item steal difficulty / success model (later)
-
-- [ ] Ensure generated tourist inventories and food offers support future exchange mechanic
-
-Current item properties:
-
-```python
-name: str
-value: float
-kind: str   # "food" or "valuable"
-hunger_restore: float | None = None
-```
-
-`steal_score` is not yet part of the item model.
+Current food theft fully satisfies hunger when an edible item is taken. Acceptance restores only `offer.food.hunger_restore`. The earlier claim that both routes use that amount was inaccurate.
 
 **---**
 
@@ -739,83 +736,57 @@ These traits should eventually produce behaviours such as:
 
 ## Theft
 
-### Mechanic Partially Scaffolded; Not Yet Verified End-to-End
+### Implemented and verified
 
-Already present: `grab_tourist_item()` calls `grab_item_monkey()`, which delegates to `world.transfer_item_to_monkey()`. No successful theft has yet been verified in a running test; the main brain does not currently select stealing.
+- [x] `steal_item` is a brain-controlled action.
+- [x] Valid-action checks require the selected tourist, proximity, possessions, and theft cooldown eligibility.
+- [x] Successful theft transfers one exact item and logs `tourist_theft`.
+- [x] Food is consumed immediately and valuables remain in the monkey inventory.
+- [x] Theft clears the tourist target and starts the interaction cooldown.
+- [x] Automated tests cover transfer validity and event emission.
+- [x] Earlier ordinary simulation observations recorded successful food and valuable thefts.
+- [x] Forced theft preference is opt-in through `SIMIAN_DEBUG_FAVOUR_STEALING` and defaults off.
 
-Planned:
+### Remaining
 
-- [x] Monkey can choose `steal_item` when its selected tourist is within range and has possessions
+- [ ] Probabilistic theft difficulty and guarding reactions.
+- [ ] Item- and tourist-specific risk.
+- [ ] Measure availability, attempts, success, and resulting offers separately.
+- [ ] Demonstrate a learned item-taking/exchange strategy against a baseline.
 
-- [x] Confirm item transfers to monkey and disappears from tourist inventory
-
-- [x] Consume stolen food and restore hunger
-
-- [x] Monkey can attempt to steal visible item
-
-- [ ] Item difficulty affects success
-
-- [ ] Monkey traits affect decision/success
-
-- [ ] Tourist traits affect difficulty
-
-- [x] Successful theft
-
-- [ ] Failed theft
-
-- [ ] Tourist reaction
-
-- [ ] Tourist becomes more cautious after robbery
-
-- [ ] Remaining items become harder to steal
-
-The monkey should not initially know which objects are worth stealing.
+Tourists can flee a monkey that is scaring them. Additional caution after theft and progressively harder repeat thefts are planned.
 
 **---**
 
 ## Tourist Economy
 
-### Not Yet Implemented
+### Implemented and verified
 
-Planned:
+- [x] Tourists find visible thieves still holding their stolen valuables.
+- [x] They prioritise the most valuable eligible stolen possession.
+- [x] An offer uses one actual food item, choosing the highest value that does not exceed the stolen item's value. Ties prefer higher hunger restoration.
+- [x] One pending offer per monkey and tourist, with a 30-`total_tick` lifetime.
+- [x] Tourists wait while an offer is pending and retry after a 30-tick cooldown when it closes.
+- [x] Fleeing, temple entry, departure, loss of proximity, missing inventory, death, and removal invalidate offers.
+- [x] Monkeys perceive only their own valid offer from a visible nearby tourist.
+- [x] `accept_trade` and `reject_trade` become eligible with tourist actions at day 45.
+- [x] Offer response uses its ID and is independent of theft cooldown and `target_tourist_id`.
+- [x] Acceptance revalidates and returns the exact valuable, consumes food, and applies hunger restoration.
+- [x] Rejection preserves both inventories. Repeat acceptance cannot transfer or feed twice.
+- [x] Both inspectors display offer participants, requested item, food, and remaining ticks.
+- [x] Offered, accepted, rejected, expired, and cancelled lifecycle events.
 
-- [x] Tourist wants stolen item returned
+### Observations and next milestone
 
-- [x] Tourist offers food/resource
+Earlier investigation in this project chat ran seeds 7, 19, and 31 for days 45–47 with fresh brains and normal island updates. Across 450 tourists, 146 had an affordable food/valuable pair at first observation. There were one food theft, one valuable theft, and zero offers. This is a short opportunity sample, not a trained-policy evaluation.
 
-- [ ] Different items have different return values
+A separate earlier live API observation at day 64 recorded seven thefts and zero offers. Four thefts were food and two of the three valuables were stolen at or after 17:00. The retained events did not establish why the remaining theft produced no offer. These observations were not rerun during the 18 November review.
 
-- [x] Monkey experiences reward
-
-- [ ] Monkey can associate item with previous reward
-
-This will create the core economic loop:
-
-```text
-
-observe tourist
-
-↓
-
-steal item
-
-↓
-
-tourist wants item back
-
-↓
-
-food offered
-
-↓
-
-monkey receives reward
-
-↓
-
-experience remembered
-
-```
+- [ ] Record full-run eligibility, offer, response, and cancellation counts.
+- [ ] Compare a simple baseline and the learned policy using matched seeds.
+- [ ] Measure acceptance per eligible offer, hunger benefit, survival, and opportunity frequency.
+- [ ] Demonstrate a naturally completed exchange in a repeatable run.
+- [ ] Counteroffers, increasing offers, food bundles, and tourist-specific bargaining traits remain future work.
 
 **---**
 
@@ -823,59 +794,34 @@ experience remembered
 
 ### Implemented
 
-- [x] Per-monkey `MonkeyBrain` neural network, experience replay, Q-based selection and epsilon exploration
-- [x] 19-feature state encoding, including selected tourist target status
-- [x] Main-brain-controlled survival, social and tourist actions with valid-action filtering
-- [x] Curriculum gating (`SURVIVAL_LEARNING_DAYS`, `BASIC_SOCIAL_LEARNING_DAYS`, `TOURIST_LEARNING_DAYS`)
-- [x] Tourist actions wired into `Monkey.update()` through `monkey_tourists.py`
-- [x] Selected tourist persistence, remembered-position investigation and interaction cooldown
-- [x] Tourist visibility/distance masking in `get_valid_actions()` to avoid invisible-target watch/follow/scare attempts
-- [x] Survival reward based on hunger, health and energy changes
-- [x] Tourist reward parameters wired into `calculate_reward()` and `Monkey.update()` (investigation arrival, interaction success/failure)
-- [x] Periodic brain training and profiler instrumentation
+- [x] Per-monkey network with **21 inputs → 32 → 32 → 17 action scores**.
+- [x] Sixteen brain-controlled actions; the wider action list also contains `follow_mother`, handled by infant rules.
+- [x] The state includes selected-target status, offer presence, and offered hunger benefit.
+- [x] Survival, social, theft, and accept/reject trade dispatch.
+- [x] Curriculum stages at days 25, 35, and 45.
+- [x] Epsilon-greedy exploration with `EPSILON = 0.1`.
+- [x] Replay limited to 1,000 experiences, batch size 32, and staggered training every 100 ticks.
+- [x] Adam at 0.001, `GAMMA = 0.95`, MSE loss, and gradient clipping.
+- [x] Experience includes next-state valid actions, used to mask bootstrapping targets.
+- [x] A transition closes at the next actual decision using its already-gathered observations, so intervening tourist offers enter the next state.
+- [x] Rewards accumulate while an action remains pending, including sleeping ticks. Death finalises a terminal transition.
+- [x] Brain-state, output, choice, and debug endpoints have success and missing-monkey smoke coverage.
 
-Current brain-controlled action vocabulary (check local constants before extending):
+### Remaining limitations
 
-```text
-wander, seek_food, seek_shelter,
-approach_monkey, avoid_monkey, follow_monkey, confront_monkey, socialise,
-investigate_tourist, watch_tourist, follow_tourist, scare_tourist, leave_tourist
-```
+- [ ] Resolve variable-duration discount semantics for sleep-spanning transitions.
+- [ ] Quantify repeated tourist-action reward incentives and sparse exchange opportunities.
+- [ ] Include enough item/outcome context to support longer-term value comparisons if experiments justify it.
+- [ ] Compare policies with controlled seeds. Lower training loss or action counts alone do not demonstrate improved behaviour.
+- [ ] Separate target network, shared policies, batched inference, and saved models are future experiments.
 
-`follow_mother` exists in the overall `MONKEY_ACTIONS` set but is handled primarily through infant logic. `grab_item` / `steal_item` is **not yet a brain-controlled action**.
+The current online network supplies both current predictions and detached bootstrap estimates.
 
-### Known Limitations
+### Historical run (day 150, recorded before this review)
 
-- [ ] Watch/follow/scare are rarely chosen even after investigation is available
-- [ ] Rewarded investigation does not guarantee continuation of an encounter: brain chooses afresh each tick
-- [ ] Repeated watch/follow successes can farm per-tick rewards; introduce once-per-event/progress signals
-- [ ] `scare_tourist` still needs verified tourist reaction integration and reward tied to that outcome
-- [ ] Q-learning bootstrap still considers all controlled actions instead of only next-state valid actions
-- [ ] Measure action availability vs selection, target arrival and interaction success separately
-- [ ] Introduce stealing and food consumption as meaningful survival incentives
-- [ ] Consider shared/batched brains later only if profiling justifies it
+The earlier report recorded population 243, 18 deaths in its last 25 days, and 122.445 ms per world tick. It predates the latest trade, transition, and chart changes. It is not a new performance result or a controlled comparison. The earlier action totals represented choices rather than successful interactions.
 
-### Recent Run (day 150)
-
-```text
-Population: 243 (185 adults, 44 infants, 14 juveniles)
-Deaths in last 25 days: 18 (12 starvation, 6 exhaustion)
-Brain action selections in report:
-  seek_food            390,899  (73.2%)
-  investigate_tourist      667  (0.1%)
-  watch_tourist              1
-  scare_tourist              7
-  leave_tourist            195
-  follow_tourist            not listed
-World update:          122.445 ms/tick
-Monkey updates:        120.424 ms/tick
-Per-monkey update:       0.494 ms
-Tourists at snapshot:  0 (expected if snapshot is after their daily departure)
-```
-
-These are **action-selection counts**, not numbers of successful interactions. The tourist action rates depend on how often selected tourists were visible and actions valid. A different run's death counts or action frequencies alone cannot demonstrate learning improvement.
-
----
+**---**
 
 ## Predators / Dangers
 
@@ -923,87 +869,45 @@ Planned:
 
 ## Simulation Statistics
 
-### Partially Implemented
+### Implemented
 
-- [x] Population statistics foundation
+- [x] Living population, total monkeys created, and derived deaths.
+- [x] Day-0 snapshot, one saved population sample per simulation day, and a live sample in `/simulation/status`.
+- [x] Alive, Deaths, and Born chart views span the current backend run and survive browser refresh.
+- [x] Console demographic reports include life stages, reproduction readiness, interval births, and death causes.
+- [x] Console profiles include tree and tourist counts and action-selection frequencies.
+- [x] Event records identify thefts and each trade lifecycle outcome.
 
-- [x] Death tracking
+### Remaining
 
-- [x] Birth/reproduction events
+- [ ] Relabel “Total Born” or expose natural births separately. Current total includes initial monkeys and manual spawns.
+- [ ] Full-run trade counters or event export beyond the latest 100 events.
+- [ ] Age/trait distributions and food availability in the UI.
+- [ ] Persistent history and model checkpoints across backend restarts.
+- [ ] Generational statistics, trait-change analysis, and reproducible experiment output.
+- [ ] Measure history response size and chart cost during long runs.
 
-### Needs Work
-
-- [x] Fix population count after births
-
-- [x] Current living population
-
-- [ ] Total births
-
-- [x] Total deaths
-
-- [x] Population over time
-
-- [x] Age distribution
-
-- [x] Average trait values
-
-- [x] Trait distributions
-
-- [x] Food availability
-
-- [ ] Tourist count
-
-- [ ] Theft statistics
-
-- [ ] Causes of death
-
-- [ ] Generational statistics
+Daily sampling describes long-term trends; it does not preserve every intraday population change.
 
 **---**
 
 ## Entity Inspection
 
-### Monkey Inspection
+### Implemented
 
-Implemented/partially implemented:
+- [x] Monkey/tourist selection and details.
+- [x] Monkey condition, traits, age, life stage, alive status, behaviour, and position.
+- [x] Held monkey items and tourist inventory.
+- [x] Pending trade offer on both participant endpoints, with remaining simulation ticks.
+- [x] Shared item rows and square portrait/item placeholders.
+- [x] Aborted requests, URL-specific results, and 404 clearing prevent stale selections.
 
-- [x] Monkey clicking
+### Remaining
 
-- [x] Monkey information popup
-
-- [x] Health information
-
-- [x] Traits
-
-- [x] Agent information
-
-Needs work:
-
-- [x] Fix popup error
-
-- [x] Verify stage display
-
-- [x] Verify alive/dead display
-
-- [ ] Display social memory
-
-- [ ] Display tourist memory
-
-### Tourist Inspection
-
-In progress:
-
-- [x] Tourist clicking
-
-- [x] Tourist popup
-
-- [x] Display state
-
-- [x] Display visible possessions
-
-- [ ] Display traits
-
-- [ ] Display robbery state
+- [ ] Desktop/narrow-screen visual verification and supplied artwork.
+- [ ] Social and tourist memory inspection.
+- [ ] Tourist traits and deeper robbery history when those systems exist.
+- [ ] Richer tourist behaviour/destination details in the inspector.
 
 **---**
 
@@ -1037,27 +941,19 @@ SIMULATION_TICK_SECONDS = 1.0
 
 ## Event System
 
-### Completed / Partially Completed
+### Implemented
 
-- [x] Simulation event foundations
+- [x] Birth events and a live feed/news ticker.
+- [x] Successful theft events for food and valuables.
+- [x] Trade offered, accepted, rejected, expired, and cancelled events.
+- [x] Events carry IDs, simulation day/tick, and participant/item data.
+- [x] Invalid/repeated acceptance cannot emit an additional accepted event.
+- [x] The latest 100 events are available through `/events`.
 
-- [x] Reproduction/birth event
+### Remaining
 
-- [x] Event display area
-
-### Future
-
-- [ ] Death events
-
-- [ ] Tourist arrival events
-
-- [x] Theft events
-
-- [ ] Injury events
-
-- [ ] Group formation events
-
-- [ ] Predator events
+- [ ] Durable full-run event export and aggregated metrics.
+- [ ] Death, arrival, injury, group, and predator events when their logging or systems are added.
 
 **---**
 
@@ -1101,7 +997,7 @@ to:
 
 which is roughly a **26% reduction in tick time**.
 
-Current monkey profile after the optimisation:
+Historical monkey profile after the observation-reuse optimisation:
 
 ```text
 total:             3.203 ms/monkey-update
@@ -1113,13 +1009,13 @@ training:          0.027 ms
 experience:        1.177 ms
 ```
 
-One remaining performance target is the observation system, especially the repeated post-action observation used to construct the reinforcement-learning `next_state`.
+Experience finalisation now reuses the next decision observation. Reprofile the current code before choosing the next optimisation. Nearby monkey visibility still scans the population, and shelter lookup still scans loaded trees.
 
 ### Performance Targets
 
 - [x] Establish profiler before major architectural rewrites
 - [x] Remove redundant pre-action observation scans
-- [ ] Profile fruit, monkey and tourist observation separately
+- [x] Separate fruit, monkey, and tourist observation timers
 - [x] Reduce expensive tree/resource scans
 - [x] Improve spatial lookup as population/world complexity grows
 - [ ] Reuse or cache pathfinding where safe
@@ -1179,62 +1075,34 @@ docker compose up --build
 
 ## High Priority
 
-- [x] Fix entity popup error
-
-- [x] Fix population count when monkeys are born
-
-- [x] Verify/fix monkey life stage display
-
-- [x] Verify/fix alive/dead display
-
-- [x] Fix minimap rendering
-
-- [x] Fix pause/speed controls
-
-- [x] Balance fruit respawn
+- [ ] Guard complete tree/brain-debug API snapshots with the world lock.
+- [ ] Make diagnostic observations and action inspection safe for reproducible experiments.
+- [ ] Resolve sleep-spanning transition discount semantics.
+- [ ] Measure trade opportunities and policy outcomes with matched seeds.
+- [ ] Validate resource balance and generation survival with repeatable long runs.
+- [x] Entity popup, population count updates, alive serialization, and stale selection fixes.
+- [x] Responsive viewport, minimap placement, wheel handling, and top controls implemented.
+- [ ] Complete their visual/interaction QA at supported viewport sizes.
 
 ## Lower Priority
 
-- [x] Prevent page scrolling while zooming map
-
-- [ ] Improve tourist click UI
-
-- [ ] Improve item UI
-
-- [ ] Improve simulation statistics
+- [ ] Supply image assets for item and portrait placeholders.
+- [ ] Extend social/tourist memory inspection.
+- [ ] Distinguish created monkeys from natural births in UI labels.
+- [ ] Add persistent run statistics and remove broken legacy tourist-experience scaffolding.
+- [ ] Standardise tourist deadlines on monotonic simulation time before supporting overnight visits.
 
 **---**
 
 # Current Development Focus
 
-The immediate focus is now:
+1. Validate opportunity generation for trading during ordinary island runs.
+2. Collect full-run metrics and compare learned and baseline policies across matched seeds.
+3. Address the API snapshot, diagnostic reproducibility, and learning-duration issues recorded above.
+4. Complete frontend visual verification.
+5. Reprofile after these correctness checks, then consider spatial indexing or batched inference if measurements justify them.
 
-```text
-stable monkey ecosystem
-↓
-efficient observation + simulation loop
-↓
-expand brain-controlled actions gradually
-↓
-tourist possessions and generic interactions
-↓
-tourist reactions and consequences
-↓
-learned item-taking / exchange strategies
-↓
-long-run population and behavioural analysis
-```
-
-The immediate milestone is:
-
-> **Demonstrate one real item theft from a tourist in the normal island simulation, with inventory transfer, edible-food consumption, and a brain-selectable action.**
-
-Longer-term performance and population stability testing remain important after the mechanic works.
-
-The learning system is already active. The priority is now to make the environment, reward structure and simulation architecture strong enough that additional learned behaviours remain computationally practical and behaviourally meaningful.
-
-
----
+The next behavioural milestone is a naturally completed, reproducible valuable-for-food exchange, with eligibility, offer, response, and outcome visible in the metrics.
 
 # Long-Term
 
